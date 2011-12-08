@@ -265,7 +265,7 @@ def extract_data_from_h5(hdf):
 
 #--------------------------------------------------------------------------------------------------------
 	
-def get_init_peak_params(E,A):
+def GUI_get_init_peak_params(E,A):
 	plt.ion()
 	
 	plt.plot(E,A,label='Experimental data')
@@ -572,7 +572,7 @@ def define_ext_constrains(param_list,constrains):
 		print 'Error : value %s is not an allowed key'%pnum
 		define_ext_constrains(param_list,constrains)
 	
-	print '--------------------------------------------------------------'
+	print '<--------------------------------------------------------------'
 	print 'Constrains type : '
 	for k in consttype.keys():
 		print k,' : ',consttype[k]
@@ -696,89 +696,6 @@ class parameter_proxy(object):
 			self.get_inel(i).amp *= norm
 			
 #--------------------------------------------------------------------------------------------------------
-# Class fitter
-#--------------------------------------------------------------------------------------------------------
-
-class fitter:
-	def __init__(self,hdf,cfg,T=None):
-		self.hdf=hdf
-		
-		self.cfg = cfg
-		if T == None:
-			self.T = self.cfg.T
-		else:
-			self.T = T	
-		self.s, self.d, self.E, self.A, self.Err = extract_data_from_h5(self.hdf)
-		self.xy, self.noel = get_init_peak_params(self.E,self.A)
-		self.skip = (self.xy == [])
-		if not self.skip:
-			self.param_list = build_params_list(self.E,self.A,self.xy,self.noel)
-			self.param  = parameter_proxy(self.param_list)
-
-			
-	def fit(self,extparam=None, extconst=None):
-		print '--------------------------------------------------------------'
-		print 'Input parameters :'
-		if extparam != None:
-			self.param = param_init = param_norm = extparam
-			print_params(self.param,self.T)
-			mod = model(self.T,self.E,self.cfg.res_param,self.d)
-		else:
-			print_params(self.param,self.T)
-			mod = model(self.T,self.E,self.cfg.res_param,self.d)
-			param_init = parameter_proxy(self.param.get_list())
-			self.param.normalise(mod) 
-			param_norm = parameter_proxy(self.param.get_list())
-		
-		refined_param,chisq,sigma,self.const = Fit(mod,self.param,self.E,self.A,self.Err,extconst=extconst)
-
-		
-		Plot(mod,refined_param,self.E,self.A)
-
-		print '--------------------------------------------------------------'
-		print 'Output parameters :'
-		print_params(refined_param,self.T,sigma)
-		save_params(self.hdf.filename,self.s,self.d,refined_param,self.const,self.T,sigma=sigma)
-		save_data(self.hdf.filename,self.s,self.d,refined_param,mod,self.E,self.A,self.Err,self.T,sigma=sigma)
-		file_print(self.hdf.filename,self.s,self.d)
-		self.param = parameter_proxy(refined_param.get_list())
-		
-		plt.show(block=False)
-		#plt.show() # in case option block does not exit 
-		
-	def restart(self):
-		r = raw_input('Would you like to fit another spectrum (y) or (n) default : [y] ?\nor change temperature (t) ?\nor refine again the previous fit with different constrains (r) ?\n')
-		if r in ['','y','Y']:
-			plt.close()
-			self.__init__(self.hdf,self.cfg,self.T)
-			if not self.skip:
-				self.fit()
-			self.restart()
-		elif r in ['n','N']:
-			print 'Bye Bye'
-			return
-		elif r in ['t','T']:
-			T = raw_input('Temperature ? [297.0]: ')
-			if T == '':
-				self.T = 297.0
-			else :
-				self.T = float(T)
-			plt.close()
-			self.__init__(self.hdf,self.cfg,self.T)
-			if not self.skip:
-				self.fit()
-			self.restart()
-		elif r in ['r','R']:
-			param_list = self.param.get_list()
-			new_param_list,self.const = define_ext_constrains(param_list,self.const)
-			plt.close()
-			self.param = parameter_proxy(new_param_list)
-			self.fit(extparam = self.param,extconst = self.const)
-			self.restart()
-		else : 
-			self.restart()
-
-#--------------------------------------------------------------------------------------------------------
 # Main
 #--------------------------------------------------------------------------------------------------------
 	
@@ -787,12 +704,64 @@ def main(argv):
 	fn = argv[1]
 	cfgfn = argv[2]
 	hdf = h5py.File(fn,'r')
-	cfg = read_configuration_file(cfgfn)
-	f = fitter(hdf,cfg)
-	if not f.skip:
-		f.fit()
-	f.restart()
+	extparam=None
+	extconst=None
+	while(1):
 		
+		cfg = read_configuration_file(cfgfn)
+		T = cfg.T
+
+		s, d, E, A, Err = extract_data_from_h5(hdf)
+		xy, noel = GUI_get_init_peak_params(E,A)
+
+		skip = (xy == [])
+		
+		if not skip:
+			param_list = build_params_list(E,A,xy,noel)
+			param  = parameter_proxy(param_list)
+
+			print '--------------------------------------------------------------'
+			print 'Input parameters :'
+			if extparam != None:
+				param = param_init = param_norm = extparam
+				print_params(param,T)
+				mod = model(T,E,cfg.res_param,d)
+			else:
+				print_params(param,T)
+				mod = model(T,E,cfg.res_param,d)		
+				param.normalise(mod) 
+		
+		        refined_param,chisq,sigma,const = Fit(mod,param,E,A,Err,extconst=extconst)
+
+			Plot(mod,refined_param,E,A)
+
+			print '--------------------------------------------------------------'
+			print 'Output parameters :'
+			print_params(refined_param,T,sigma)
+			save_params(hdf.filename,s,d,refined_param,const,T,sigma=sigma)
+			save_data(hdf.filename,s,d,refined_param,mod,E,A,Err,T,sigma=sigma)
+			file_print(hdf.filename,s,d)
+			param = parameter_proxy(refined_param.get_list())
+			plt.show(block=False)
+
+			r = raw_input('Would you like to fit another spectrum (y) or (n) default : [y] ?\nor change temperature (t) ?\nor refine again the previous fit with different constrains (r) ?\n')
+			plt.close()
+			if r in ['n','N']:
+				print 'Bye Bye'
+				break
+			elif r in ['t','T']:
+				T = raw_input('Temperature ? [297.0]: ')
+				if T == '':
+					T = 297.0
+				else :
+					T = float(T)
+			elif r in ['r','R']:
+				param_list = param.get_list()
+				new_param_list,const = define_ext_constrains(param_list,const)
+				param = parameter_proxy(new_param_list)
+			else:
+				pass # will continue as default
+	# now we exit from the main
 	hdf.close()
 
 #--------------------------------------------------------------------------------------------------------
