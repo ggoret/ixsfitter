@@ -240,15 +240,24 @@ def print_params(param,T,sigma=None):
 
 #--------------------------------------------------------------------------------------------------------
 
-def extract_data_from_h5(hdf):
+def interactive_extract_data_from_h5(hdf):
 	scans = np.int32(hdf.keys())
 	scans.sort()
 	print '--------------------------------------------------------------'
 	print scans
 	print '--------------------------------------------------------------'
-	s = raw_input('Enter scan number : ')
-	if s not in hdf.keys():
-		raise  Exception , ('Scan %s not found in file %s'%(s,hdf.filename))
+	counterror=0
+	while 1:
+		s = raw_input('Enter scan number : ')
+		if s not in hdf.keys():
+			if(counterror<4):
+				print  'Scan %s not found in file %s  Try Again you have still %d try '%(s,hdf.filename, 4-counterror)
+			else:
+				raise  Exception , ('Scan %s not found in file %s'%(s,hdf.filename))
+			counterror+=1
+		else:
+			break
+
 	detas = np.int32(hdf[s].keys())
 	detas.sort()
 	print '--------------------------------------------------------------'
@@ -436,8 +445,7 @@ def Plot(mod,param,E,A):
 
 #--------------------------------------------------------------------------------------------------------
 
-def save_params(fn,s,d,param,const,T,sigma):
-	dirfn = fn[:-3] + '.out'
+def save_params(dirfn, fn, s,d,param,const,T,sigma):
 	if not os.path.exists(dirfn):
 		os.mkdir(dirfn)
 
@@ -453,7 +461,7 @@ def save_params(fn,s,d,param,const,T,sigma):
 	for i in range(0,param.nb_inel_peaks*3,3):
 		sigppk += [[sigtmp[i],sigtmp[i+1],sigtmp[i+2]]]
 
-	out = open('%s/%s_%s_%s.param'%(dirfn,fn[:-3],s,d),'w')
+	out = open('%s/%s_%s_%s.param'%(dirfn,fn,s,d),'w')
 	out.write('# Output parameters file\n')
 	out.write('T = %.2f\n'%T)
 	out.write('param = %s\n'%str(param.get_list()))
@@ -481,8 +489,7 @@ def save_params(fn,s,d,param,const,T,sigma):
 
 #--------------------------------------------------------------------------------------------------------
 
-def save_data(fn,s,d,param,mod,E,A,Err,T,sigma):
-	dirfn = fn[:-3] + '.out'
+def save_data(dirfn,fn, s,d,param,mod,E,A,Err,T,sigma):
 	if not os.path.exists(dirfn):
 		os.mkdir(dirfn)
 
@@ -504,18 +511,17 @@ def save_data(fn,s,d,param,mod,E,A,Err,T,sigma):
 	for inel in inelcontrib:
 		Ldat+=[inel]
 	datout = np.column_stack(np.array(Ldat))
-	np.savetxt('%s/%s_%s_%s.dat'%(dirfn,fn[:-3],s,d), datout, fmt='%14.4f', delimiter=' ')
+	np.savetxt('%s/%s_%s_%s.dat'%(dirfn,fn,s,d), datout, fmt='%14.4f', delimiter=' ')
 
 	
-def file_print(fn,s,d):
-	dirfn = fn[:-3] + '.out'
+def file_print(dirfn,fn, s,d):
 	if not os.path.exists(dirfn):
 		os.mkdir(dirfn)
-	plt.savefig('%s/%s_%s_%s.png'%(dirfn,fn[:-3],s,d),format = 'png')#format among : png, pdf, ps, eps, svg
+	plt.savefig('%s/%s_%s_%s.png'%(dirfn,fn,s,d),format = 'png')#format among : png, pdf, ps, eps, svg
 	
 #--------------------------------------------------------------------------------------------------------
 
-def read_configuration_file(cfgfn):
+def read_configuration_file(cfgfn,allowed_keys={} ):
 	"""
 	cfgfn is the filename of the configuration file.
 	the function return an object containing information from configuration file (cf inside cfg file).
@@ -530,11 +536,10 @@ def read_configuration_file(cfgfn):
 		traceback.print_exception(exceptionType, exceptionValue, exceptionTraceback,
                               limit=None, file=sys.stdout)
 		raise Exception
-	class config():
+	class Config():
 		exec(s)
-	cfg = config()
+	cfg = Config()
 	
-	allowed_keys={"res_param":DictType,"T":FloatType}
 	
 	for key in allowed_keys.keys() :
 		if key not in dir(cfg):
@@ -572,7 +577,7 @@ def define_ext_constrains(param_list,constrains):
 		print 'Error : value %s is not an allowed key'%pnum
 		define_ext_constrains(param_list,constrains)
 	
-	print '<--------------------------------------------------------------'
+	print '--------------------------------------------------------------'
 	print 'Constrains type : '
 	for k in consttype.keys():
 		print k,' : ',consttype[k]
@@ -694,56 +699,84 @@ class parameter_proxy(object):
 		self.get_el().amp *= norm
 		for i in range(self.nb_inel_peaks):
 			self.get_inel(i).amp *= norm
-			
+
+def get_dotstripped_path_name( name ):
+	posslash=name.rfind("/")
+	posdot  =name.rfind(".")
+	if posdot>posslash:
+		name= name[:posdot]
+	else:
+		pass
+	if(posslash>-1):
+		return name, name[posslash+1:]
+	else:
+		return name, name
+		
+
 #--------------------------------------------------------------------------------------------------------
 # Main
 #--------------------------------------------------------------------------------------------------------
-	
+
 def main(argv):
 	print_logo()
 	fn = argv[1]
-	cfgfn = argv[2]
+	cfg_filename = argv[2]
 	hdf = h5py.File(fn,'r')
-	extparam=None
-	extconst=None
+	
+	# the allowed keys will be available as cfg members after reading parameter file 
+	allowed_keys={"res_param":DictType,"T":FloatType}
+	# EXAMPLE OF CFG FILE :
+	""""
+	# Parameters for resolution function
+	# usage : res_param = {detector_number:[mu,wG,wL],...,n:[mun,wGn,wLn]}
+	res_param ={
+	1:[0.6552,2.604,4.53],
+	2:[0.6319,2.603,4.013],
+	..........................
+	}
+	#Temperature (important : floating type is mandatory)
+	T = 297.0
+	"""
+	
+	cfg = read_configuration_file(cfg_filename,allowed_keys= allowed_keys)
+	interactive_Entry = True 
+	mod=None
+	const=None
 	while(1):
-		
-		cfg = read_configuration_file(cfgfn)
-		T = cfg.T
+		if interactive_Entry:
+			s, d, E, A, Err = interactive_extract_data_from_h5(hdf)
+			mod = model(cfg.T,E,cfg.res_param,d)
+			xy, noel = GUI_get_init_peak_params(E,A)
+			skip = (xy == [])
 
-		s, d, E, A, Err = extract_data_from_h5(hdf)
-		xy, noel = GUI_get_init_peak_params(E,A)
-
-		skip = (xy == [])
-		
-		if not skip:
 			param_list = build_params_list(E,A,xy,noel)
 			param  = parameter_proxy(param_list)
-
+			param.normalise(mod) 
 			print '--------------------------------------------------------------'
 			print 'Input parameters :'
-			if extparam != None:
-				param = param_init = param_norm = extparam
-				print_params(param,T)
-				mod = model(T,E,cfg.res_param,d)
-			else:
-				print_params(param,T)
-				mod = model(T,E,cfg.res_param,d)		
-				param.normalise(mod) 
+			print_params(param,cfg.T)			
+		else:
+			skip=False
 		
-		        refined_param,chisq,sigma,const = Fit(mod,param,E,A,Err,extconst=extconst)
+		if not skip:
 
+			refined_param,chisq,sigma,const = Fit(mod,param,E,A,Err,extconst=const)
 			Plot(mod,refined_param,E,A)
 
 			print '--------------------------------------------------------------'
 			print 'Output parameters :'
-			print_params(refined_param,T,sigma)
-			save_params(hdf.filename,s,d,refined_param,const,T,sigma=sigma)
-			save_data(hdf.filename,s,d,refined_param,mod,E,A,Err,T,sigma=sigma)
-			file_print(hdf.filename,s,d)
+			print_params(refined_param,cfg.T,sigma)
+			
+			output_dir, output_stripped_name  = get_dotstripped_path_name(hdf.filename)
+
+			save_params( output_dir, output_stripped_name       , s,d,refined_param,const,cfg.T,sigma=sigma)
+			save_data  ( output_dir, output_stripped_name       , s,d,refined_param,mod,E,A,Err,cfg.T,sigma=sigma)
+			file_print ( output_dir, output_stripped_name       , s,d)
+
 			param = parameter_proxy(refined_param.get_list())
 			plt.show(block=False)
 
+			interactive_Entry=True
 			r = raw_input('Would you like to fit another spectrum (y) or (n) default : [y] ?\nor change temperature (t) ?\nor refine again the previous fit with different constrains (r) ?\n')
 			plt.close()
 			if r in ['n','N']:
@@ -752,13 +785,14 @@ def main(argv):
 			elif r in ['t','T']:
 				T = raw_input('Temperature ? [297.0]: ')
 				if T == '':
-					T = 297.0
+					cfg.T = 297.0
 				else :
-					T = float(T)
+					cfg.T = float(T)
 			elif r in ['r','R']:
 				param_list = param.get_list()
 				new_param_list,const = define_ext_constrains(param_list,const)
 				param = parameter_proxy(new_param_list)
+				interactive_Entry=False
 			else:
 				pass # will continue as default
 	# now we exit from the main
