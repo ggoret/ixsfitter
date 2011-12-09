@@ -66,26 +66,58 @@ def ft_pseudo_voigt(S,mu,wL,wG):
 	"""Fourier transform of amplitude pseudo-voigt used as resolution function"""
 	return mu * ft_line(S,0,1.,wL) + (1-mu) * ft_gauss(S,0,1.,wG)
 
+# --------------------------------------------------------------------------------------------------------
+#  Convolution Models ( all have the same interface(excepted init function )
+# ---------------------------------------------------------------------------------------------------------
+
+class PseudoVoigt:
+	def __init__(self ,  mu,lorentz_w ,gaussian_w ):
+		self.mu=mu
+		self.gaussian_w=gaussian_w
+		self.lorentz_w=lorentz_w
+
+	def safe_scale_length(self):
+		return  min(self.lorentz_w/5,self.gaussian_w) 
+	def safe_margin(self):
+		 return 10*self.lorentz_w+3*self.gaussian_w
+	 
+	def values_on_real_points(self,x ):
+		 return   pseudo_voigt(x ,  self.mu,self.lorentz_w ,self.gaussian_w )
+	def values_on_reciprocal_points(self,x ):
+		 return   ft_pseudo_voigt(x ,  self.mu,self.lorentz_w ,self.gaussian_w )
+	 
+
+
 
 #--------------------------------------------------------------------------------------------------------
 # Fitting function Model
 #--------------------------------------------------------------------------------------------------------
 
-class model:
-	def __init__(self,T,E,res_param,d):
+class Model:
+	def __init__(self,T,E,res_param, convolution_function):
+
+		self.convolution_function = convolution_function
+		safe_step = self.convolution_function.safe_scale_length() 
+		safe_margin = self.convolution_function.safe_margin() 
+		
+
 		self.T = T
 		self.kb = 1.3806504e-23/1.602176462e-22
 		self.E = E
-		self.xmin= E[0]
-		self.xmax= E[-1]
+		self.orig_xmin= E[0]  - safe_margin
+		self.orig_xmax= E[-1] + safe_margin
+		self.xmin= E[0]  - safe_margin
+		self.xmax= E[-1] + safe_margin
+
 		self.norm = (self.xmax - self.xmin)
-		
-		self.mun,self.wGn,self.wLn = res_param[int(d)]
-		self.npts = sup_pow_2(self.norm/(self.wGn/5.))
+		self.npts = sup_pow_2(self.norm/(safe_step))
+
 		
 		self.Ech = np.arange(self.xmin,self.xmax,float((self.xmax-self.xmin))/self.npts)
 		self.Sch = np.fft.fftshift(np.arange(-self.npts*np.pi/self.norm,self.npts*np.pi/self.norm,2*np.pi/self.norm))
 		
+		self.resolution_fft = self.convolution_function.values_on_reciprocal_points(self.Sch)  
+
 		self.count=0
 		
 #--------------------------------------------------------------------------------------------------------
@@ -136,7 +168,8 @@ class model:
 
 		Sch = self.Sch
 		Ech = self.Ech
-		conv = np.fft.ifft(self.ft_i(Sch,param)*ft_pseudo_voigt(Sch,self.mun,self.wLn,self.wGn))*npts
+		
+		conv = np.fft.ifft(self.ft_i(Sch,param)*   self.resolution_fft )*npts
 		conv = conv.real
 		if interpolation:
 			return np.interp(E,Ech,conv)
@@ -426,10 +459,11 @@ def Plot(mod,param,E,A):
 	
 	
 	for i in range(param.nb_inel_peaks):
-		peak = np.fft.ifft(mod.ft_inel_lines(Sch,param,i)*ft_pseudo_voigt(Sch,mod.mun,mod.wLn,mod.wGn))*mod.npts
+		peak = np.fft.ifft(mod.ft_inel_lines(Sch,param,i)*  mod.resolution_fft  )*mod.npts
+
 		plt.plot(Ech-param.Ec,peak.real,'Cyan',label='Inelastic Contrib %d'%(i+1))
 	
-	convel = np.fft.ifft(ft_line(Sch,param.Ec-mod.xmin,param.get_el().amp,param.get_el().wid)*ft_pseudo_voigt(Sch,mod.mun,mod.wLn,mod.wGn))*mod.npts
+	convel = np.fft.ifft(ft_line(Sch,param.Ec-mod.xmin,param.get_el().amp,param.get_el().wid)*mod.resolution_fft)*mod.npts
 	plt.plot(Ech-param.Ec,convel.real,'magenta',label='Elastic Contrib.')
 	
 	App = mod.Ft_I(param.get_list(),E,interpolation=0)
@@ -498,12 +532,12 @@ def save_data(dirfn,fn, s,d,param,mod,E,A,Err,T,sigma):
 	
 	fit = mod.Ft_I(param.get_list(),E,interpolation=1)
 	
-	convel = np.fft.ifft(ft_line(Sch,param.Ec-mod.xmin,param.get_el().amp,param.get_el().wid)*ft_pseudo_voigt(Sch,mod.mun,mod.wLn,mod.wGn))*mod.npts
+	convel = np.fft.ifft(ft_line(Sch,param.Ec-mod.xmin,param.get_el().amp,param.get_el().wid)*mod.resolution_fft)*mod.npts
 	elcontrib = np.interp(E,Ech,convel.real)
 	
 	inelcontrib = []
 	for i in range(param.nb_inel_peaks):
-		inel = np.fft.ifft(mod.ft_inel_lines(Sch,param,i)*ft_pseudo_voigt(Sch,mod.mun,mod.wLn,mod.wGn))*mod.npts
+		inel = np.fft.ifft(mod.ft_inel_lines(Sch,param,i)*mod.resolution_fft )*mod.npts
 		inelinterp = np.interp(E,Ech,inel.real)
 		inelcontrib +=[inelinterp]
 	
@@ -695,7 +729,7 @@ class parameter_proxy(object):
 		return self.elastic_params
 
 	def normalise(self,mod):
-		norm = pseudo_voigt(0,mod.mun,mod.wLn,mod.wGn)
+		norm = mod.convolution_function.values_on_real_points (0)   
 		self.get_el().amp *= norm
 		for i in range(self.nb_inel_peaks):
 			self.get_inel(i).amp *= norm
@@ -742,14 +776,26 @@ def main(argv):
 	interactive_Entry = True 
 	mod=None
 	const=None
+	CONVOLUTION_METHOD="PSEUDOVOIGT"
+
 	while(1):
 		if interactive_Entry:
-			s, d, E, A, Err = interactive_extract_data_from_h5(hdf)
-			mod = model(cfg.T,E,cfg.res_param,d)
-			xy, noel = GUI_get_init_peak_params(E,A)
+			( scan_num , detect_num, 
+			  Ene_array ,Intens_array, Intens_Err) = interactive_extract_data_from_h5(hdf)
+			
+			if  CONVOLUTION_METHOD=="PSEUDOVOIGT":
+				# we build hera a pseudo_voigt for convolution, based on configuration parameters peculiar to the detector 
+				mu,gaussian_w,lorentz_w = cfg.res_param[int(detect_num)]
+				convolution_Function = PseudoVoigt( mu,lorentz_w ,gaussian_w )
+			else:
+				raise Exception, (" I dont know your convolution model=%s, develop it it the code "%CONVOLUTION_METHOD)
+
+			mod = Model(cfg.T,Ene_array,cfg.res_param,convolution_Function )
+
+			xy, noel = GUI_get_init_peak_params(Ene_array,Intens_array)
 			skip = (xy == [])
 
-			param_list = build_params_list(E,A,xy,noel)
+			param_list = build_params_list(Ene_array,Intens_array,xy,noel)
 			param  = parameter_proxy(param_list)
 			param.normalise(mod) 
 			print '--------------------------------------------------------------'
@@ -760,8 +806,8 @@ def main(argv):
 		
 		if not skip:
 
-			refined_param,chisq,sigma,const = Fit(mod,param,E,A,Err,extconst=const)
-			Plot(mod,refined_param,E,A)
+			refined_param,chisq,sigma,const = Fit(mod,param,Ene_array ,Intens_array, Intens_Err, extconst=const)
+			Plot(mod,refined_param,Ene_array,Intens_array)
 
 			print '--------------------------------------------------------------'
 			print 'Output parameters :'
@@ -769,9 +815,9 @@ def main(argv):
 			
 			output_dir, output_stripped_name  = get_dotstripped_path_name(hdf.filename)
 
-			save_params( output_dir, output_stripped_name       , s,d,refined_param,const,cfg.T,sigma=sigma)
-			save_data  ( output_dir, output_stripped_name       , s,d,refined_param,mod,E,A,Err,cfg.T,sigma=sigma)
-			file_print ( output_dir, output_stripped_name       , s,d)
+			save_params( output_dir, output_stripped_name       , scan_num , detect_num ,refined_param,const,cfg.T,sigma=sigma)
+			save_data  ( output_dir, output_stripped_name       , scan_num , detect_num ,refined_param,mod,Ene_array ,Intens_array, Intens_Err,cfg.T,sigma=sigma)
+			file_print ( output_dir, output_stripped_name       ,  scan_num , detect_num)
 
 			param = parameter_proxy(refined_param.get_list())
 			plt.show(block=False)
