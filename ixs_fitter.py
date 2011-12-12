@@ -33,9 +33,8 @@ from matplotlib import pyplot as plt
 from PyMca import Gefit 
 
 
-#--------------------------------------------------------------------------------------------------------
-# Basic function Model
-#--------------------------------------------------------------------------------------------------------
+
+
 
 def line(x,x0,A,w):
 	""" normalised area lorenzian modeling inelastic line (integral = 1)"""
@@ -48,6 +47,33 @@ def gauss(x,x0,A,w):
 def pseudo_voigt(E,mu,wL,wG):
 	"""amplitude pseudo-voigt used as resolution function"""
 	return mu * line(E,0.,1.,wL) + (1-mu) * gauss(E,0.,1.,wG)
+
+
+#--------------------------------------------------------------------------------------------------------
+# Basic function Model
+#--------------------------------------------------------------------------------------------------------
+
+
+class LineModel:
+	def nofMyParams(self):
+		return 3
+	def __init__(self, arr_of_pars):
+		self.Center = arr_of_pars[0:1]   # Note: this is a View . It changes when arr_of_pars changes
+		self.Height = arr_of_pars[1:2] 
+		self.W      = arr_of_pars[2:3]
+
+	def ft_and_derivatives(self, reciprocal_grid, real_grid_origin,Stokes=True ):
+		result=np.zeros(   [  len(reciprocal_grid),    1+self.nofMyParams()  ]   )
+		if Stokes:
+			Center =  self.Center - real_grid_origin
+		else:
+			Center = -self.Center - real_grid_origin
+
+		result [:,2] = ft_line( reciprocal_grid, Center ,1.0, self.W    )
+		result [:,0] = self.Height*result [:,1]
+		result [:,1] = self.Height*result [:,1]*( -1.0j*reciprocal_grid)
+		result [:,3] = self.Height*result [:,1]*( -1.0/2*abs(reciprocal_grid))
+		
 
 #--------------------------------------------------------------------------------------------------------
 # Basic FT function Model
@@ -221,16 +247,6 @@ def print_logo():
 	print "/___/ /_/|_|/____/  /_/    /_/ \__/ \__/ \___//_/ v1.5\n\n"
 	
 
-def extract_Ec_Ael_peaks(xy,noel):
-	if noel:
-		Ec=float(raw_input('Enter overall scan shift (Ec) : '))
-		Ael=float(raw_input('Enter intensity of elastic line (Ael) : '))
-		return Ec,Ael,xy
-	else : 
-		Ec,Ael = xy.pop(0)
-		return Ec,Ael,xy
-
-
 def get_xy(event):
 	if event.button == 1:
 	        if event.inaxes:
@@ -340,19 +356,7 @@ def GUI_get_init_peak_params(E,A):
 	return xy,noel
 
 #--------------------------------------------------------------------------------------------------------	
-	
-def build_params_list(E,A,xy,noel):
-	wel,wj =0.1,0.1 #widths of elastic and exitation peaks (initial guess)
-	Ec,Ael,peaks=extract_Ec_Ael_peaks(xy,noel)
-	ppk = []
-	for pk in peaks:
-		ppk +=[pk[0],pk[1],wj]
-	
-	xmin= E[0]
-	xmax= E[-1]
-	init_spacing = (xmax-xmin)/len(E)		
-	p = np.array([Ec,Ael,wel] + ppk)
-	return p
+
 	
 #--------------------------------------------------------------------------------------------------------
 
@@ -793,10 +797,25 @@ def main(argv):
 			mod = Model(cfg.T,Ene_array,cfg.res_param,convolution_Function )
 
 			xy, noel = GUI_get_init_peak_params(Ene_array,Intens_array)
-			skip = (xy == [])
-
-			param_list = build_params_list(Ene_array,Intens_array,xy,noel)
-			param  = parameter_proxy(param_list)
+			skip = (xy == [])  # xy is a list : [ e0, height0, e1, height....]
+			if noel :   # means : energy range was not containing zero , and elastic peak has not been set  by
+                                    # the above GUI routine. We are going to ask for it now and prepend Ec, Ael to xy
+				while(1):
+					try:
+						Ec=float(raw_input('Enter overall scan shift (Ec) : '))
+						Ael=float(raw_input('Enter intensity of elastic line (Ael) : '))
+						xy=[[Ec,Ael]]+xy
+						break
+					except:
+						print " INPUT ERROR, TRY AGAIN "
+						pass
+			# setting up parameter list  : ( position, height, width, position, height.... )
+			param_list = np.zeros([len(xy),3    ],"d")
+			param_list[:,:2]=xy
+			wel,wj =0.1,0.1 #widths of elastic and excitation peaks (initial guess)
+			param_list[0,2]=wel
+			param_list[1:,2]=wj
+			param  = parameter_proxy(param_list.flatten())
 			param.normalise(mod) 
 			print '--------------------------------------------------------------'
 			print 'Input parameters :'
