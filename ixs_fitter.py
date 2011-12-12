@@ -57,12 +57,20 @@ def pseudo_voigt(E,mu,wL,wG):
 class LineModel:
 	def nofMyParams(self):
 		return 3
+	def parNames(self):
+		return ["Center",
+			"Height",
+			"Width" ]
+
 	def __init__(self, arr_of_pars):
 		self.Center = arr_of_pars[0:1]   # Note: this is a View . It changes when arr_of_pars changes
 		self.Height = arr_of_pars[1:2] 
 		self.W      = arr_of_pars[2:3]
 
-	def ft_and_derivatives(self, reciprocal_grid, real_grid_origin,Stokes=True ):
+	def get_Center(self):
+		return self.Center
+
+	def ft_and_derivatives(self, reciprocal_grid, real_grid_origin, Stokes=True ):
 		result=np.zeros(   [  len(reciprocal_grid),    1+self.nofMyParams()  ]   )
 		if Stokes:
 			Center =  self.Center - real_grid_origin
@@ -70,7 +78,7 @@ class LineModel:
 			Center = -self.Center - real_grid_origin
 
 		result [:,2] = ft_line( reciprocal_grid, Center ,1.0, self.W    )
-		result [:,0] = self.Height*result [:,1]
+		result [:,0] = self.Height*result [:,2]
 		result [:,1] = self.Height*result [:,1]*( -1.0j*reciprocal_grid)
 		result [:,3] = self.Height*result [:,1]*( -1.0/2*abs(reciprocal_grid))
 		
@@ -145,88 +153,58 @@ class Model:
 		self.resolution_fft = self.convolution_function.values_on_reciprocal_points(self.Sch)  
 
 		self.count=0
-		
-#--------------------------------------------------------------------------------------------------------
-
-	def ft_inel_lines(self,S,param,peak_id):
-		""" 
-		inelastic lines (pair of peaks) !! Display only !! 
-		based on lorentizan with amplitude factor = exp(-(pj[0]-Ec)/(k*T)) for the anti-stokes
-		"""
-		kb = self.kb
-		T = self.T
-		return ft_line(S,param.get_inel(peak_id).pos-self.xmin,param.get_inel(peak_id).amp,param.get_inel(peak_id).wid) + ft_line(S,-param.get_inel(peak_id).pos+2*param.Ec-self.xmin,param.get_inel(peak_id).amp,param.get_inel(peak_id).wid)*np.exp(-(param.get_inel(peak_id).pos-param.Ec)/(kb*T))
-
-
-	def ft_inel_contrib(self,S,param):
-		""" 
-		inelastic contribution of I(S) 
-		based on lorentizan with amplitude factor = exp(-(pj[0]-Ec)/(k*T)) for the anti-stokes
-		"""
-		kb = self.kb
-		T = self.T
-		
-		return sum([ft_line(S,param.get_inel(i).pos-self.xmin,param.get_inel(i).amp,param.get_inel(i).wid) + ft_line(S,-param.get_inel(i).pos+2*param.Ec-self.xmin,param.get_inel(i).amp,param.get_inel(i).wid)*np.exp(-(param.get_inel(i).pos-param.Ec)/(kb*T)) for i in range(param.nb_inel_peaks)])
-
-	def ft_i(self,S,param):
-		"""
-		ixs model function : 
-		elastic_contribution + inelastic_contribution cf e_line and inel_contrib
-		"""
-		return ft_line(S,param.Ec-self.xmin,param.get_el().amp,param.get_el().wid)  + self.ft_inel_contrib(S,param)
 	
-	def Ft_I(self,p, E, interpolation=1): 
+
+	def	set_Params_and_Functions(self, params_and_functions):
+		self.params_and_functions=params_and_functions
+
+#--------------------------------------------------------------------------------------------------------
+
+	
+	def Ft_I(self,p, E, interpolation=1, mask=None, convolution=1): 
 		""" Interface """
-		return self.ft_I(E,p,interpolation=interpolation)
 		
-	def ft_I(self,E,p,interpolation=1):
-		"""
-		i(E) convoluted with resolution (pseudo voigt function)
-		p = [Av,Ec,Ael,wel,xn,An,wn,...for all n]
-		"""
-		self.count+=1
-		param = parameter_proxy(p)
-		
-		xmin = self.xmin
-		xmax = self.xmax
-		npts = self.npts
-		norm = self.norm
+		# update variables in self.params_and_functions
+		self.params_and_functions.par_array[:] = p   # Note : we update internal values. We dont change the object reference value 
+		if mask is None:
+			mask=np.ones(len(self.params_and_functions.shapes) )
 
-		Sch = self.Sch
-		Ech = self.Ech
-		
-		conv = np.fft.ifft(self.ft_i(Sch,param)*   self.resolution_fft )*npts
-		conv = conv.real
+		icontribution=0
+		ipar=0
+		for contribution in self.params_and_functions.shapes:
+			npars = contribution.nofMyParams()
+			parnames = contribution.parNames()
+			result=0.0
+			fact=1.0*mask[icontribution]
+			if icontribution==0:
+				value_and_deri =  contribution.ft_and_derivatives( reciprocal_grid.Sch, self.xmin ,self.T, Stokes=0 )
+				result=result+value_and_deri [0]*fact  # so far we exploit only function itself not derivatives..
+				el_center = contribution.get_Center()
+			else:
+				value_and_deri =  contribution.ft_and_derivatives( reciprocal_grid.Sch, self.xmin , Stokes=+1 )
+				result=result+value_and_deri [0]*fact
+
+				inel_center = contribution.get_Center()
+				fact = fact* np.exp(-(inel_center-el_center)/(self.kb*self.T))
+				value_and_deri =  contribution.ft_and_derivatives( reciprocal_grid.Sch, self.xmin , Stokes=-1 )*fact
+
+				result=result+value_and_deri [0]
+
+			icontribution+=1
+			ipar+=npars
+
+
+		if convolution:
+			result = np.fft.ifft(result*   self.resolution_fft )*npts
+		else:
+			result = np.fft.ifft(result  ) 
+
+		result = result.real
 		if interpolation:
-			return np.interp(E,Ech,conv)
+			return np.interp(E,Ech,result)
 		else :
-			return conv
+			return result
 
-#--------------------------------------------------------------------------------------------------------
-# Fitting Class	
-#--------------------------------------------------------------------------------------------------------
-
-class fitting:
-	"""
-	Return the point which minimizes the sum of squares of M (non-linear) equations 
-	in N unknowns given a starting estimate using a modification of the Levenberg-Marquardt algorithm.
-	"""
-	def __init__(self, param, x, y,yerr):
-		self.x=x
-		self.y=y
-		self.yerr=yerr
-		self.param = [p for p in param]
-
-	def define_func(self,func):
-		self.f = func
-
-	def rms(self,param_from_fit):
-		self.param=param_from_fit[:]
-		return np.sqrt(np.sum(((self.y - self.f(self.param,self.x))**2)))/len(self.x)
-
-	def optimize(self,const=[]):
-		p1, chisq, sigmapar = Gefit.LeastSquaresFit(self.f , self.param, constrains=const ,xdata=self.x , ydata= self.y ,sigmadata=self.yerr)
-		return p1,chisq,sigmapar
 
 #--------------------------------------------------------------------------------------------------------
 # Misc Function    
@@ -258,34 +236,6 @@ def get_xy(event):
 def zeroinv(v):
 	return np.sign(v[0])==np.sign(v[-1])
 
-	
-def print_params(param,T,sigma=None):
-	if sigma == None:
-		sigma =  list(np.zeros(param.nb_params))
-	sigEc,sigAel,sigwel = sigma[:3]
-	sigppk = sigma[3:]
-	sigtmp = sigppk[:]
-	sigppk = []
-	
-	for i in range(0,param.nb_inel_peaks*3,3):
-		sigppk += [[sigtmp[i],sigtmp[i+1],sigtmp[i+2]]]
-
-
-	print'-------------------------------------------'
-	print'temperature : %.2f'%T
-	print'-------------------------------------------'
-	print'elastic line :'
-	print'overall scan shift        [Ec]  = %.4f (%.4f)'%(param.get_el().Ec,sigEc)
-	print'intensity of elastic line [Ael] = %.4f (%.4f)'%(param.get_el().amp,sigAel)
-	print'width of elastic line     [wel] = %.4f (%.4f)'%(param.get_el().wid,sigwel)
-	print'-------------------------------------------'
-
-	for i in range(param.nb_inel_peaks):
-		print'inelastic line %d :'%(i+1)
-		print'position of exitation    [E%d] = %.4f (%.4f)'%(i+1,param.get_inel(i).pos,sigppk[i][0])
-		print'intensity of exitation   [A%d] = %.4f (%.4f)'%(i+1,param.get_inel(i).amp,sigppk[i][1])
-		print'width of inelastic lines [w%d] = %.4f (%.4f)'%(i+1,param.get_inel(i).wid,sigppk[i][2])
-	print '--------------------------------------------------------------'
 
 #--------------------------------------------------------------------------------------------------------
 
@@ -360,118 +310,81 @@ def GUI_get_init_peak_params(E,A):
 	
 #--------------------------------------------------------------------------------------------------------
 
-def build_constrains(nb_params,position=0,prange=[],intensity=0,irange=[],width=0,wrange=[]):
+def default_build_constrains( params_and_functions   ,position=0,prange=[],intensity=0,irange=[],width=0,wrange=[]):
 	"""
 	preparing constrains for optimizing amplitudes
 	0 = Free       1 = Positive     2 = Quoted
 	3 = Fixed      4 = Factor       5 = Delta	
 	6 = Sum        7 = ignored
 	"""
-	c = list(np.zeros((3,nb_params)))
-	for i in range(nb_params-2):
-		if i%3==0:
-			if position == 2:
-				c[0][i]=position
-				if prange != []:
-					c[1][i]=prange[0]
-					c[2][i]=prange[1]
-				else:
-					c[1][i]=0.
-					c[2][i]=400.
-			else : 
-				c[0][i]=position
-			if intensity == 2:
-				c[0][i+1]=intensity
-				if irange != []:
-					c[1][i+1]=irange[0]
-					c[2][i+1]=irange[1]
-				else:
-					c[1][i+1]=0.
-					c[2][i+1]=1000.
-			else : 
-				c[0][i+1]=intensity
-			
-			if width == 2:
-				c[0][i+2]=width
-				if wrange != []:
-					c[1][i+2]=wrange[0]
-					c[2][i+2]=wrange[1]
-				else:
-					c[1][i+2]=0.
-					c[2][i+2]=10.
-			else : 
-				c[0][i+2]=width
-			if i == 0:#Ec
-				c[0][i]=0
-    				c[1][i]=0
-				c[2][i]=0
+	if prange ==[]: prange=0.0,400.0
+	if irange ==[]: prange=0.0,1000.0
+	if wrange ==[]: prange=0.0,10.0
+
+	indicators = {"Center":position ,"Height":intensity,"Width":width }
+	indicators_limit = {"Center":prange ,"Height":irange,"Width":wrange }
+
+	c = list(np.zeros((3, len(params_and_functions.par_array)  )))
+	icontribution=0
+	ipar=0
+	for contribution in self.shapes:
+		npars = contribution.nofMyParams()
+		parnames = contribution.parNames()
+		if icontribution==0:
+			# 'elastic line : everything is free'			
+			for k in range(npars):
+				c[0][ipar+k],c[1][ipar+k], c[2][ipar+k] =0 # Free
+		else:
+			# 'inelastic line %d :'%(icontribution+1)
+			for k in range(npars):
+				if indicators.has_key( parnames[k]) and indicators[parnames[k]]: 
+					c[0][ipar+k]=indicators[parnames[k]]
+					if indicators[parnames[k]]==2:
+						c[1][ipar+k],c[2][ipar+k] =indicators_limits[parnames[k]]
+					else:
+						c[0][ipar+k],c[1][ipar+k], c[2][ipar+k] =0 # Free
+		icontribution+=1
+		ipar+=npars
 	return c
     	
-#--------------------------------------------------------------------------------------------------------
-  	
-def Fit(mod,p,E,A,Err,extconst=None):
-	fit = fitting(p.get_list(),E,A,Err)#
-	fit.define_func(mod.Ft_I)
-	if extconst != None:
-		print 'Optimization based on user-define parameter constrains, please wait ...'
-		mod.count = 0
-		t0=time.time()
-		p,chisq,sigma = fit.optimize(const=extconst)
-		t1=time.time()
-		print 'Exec time for calculation : %f'%(t1-t0)
-		print 'number of iteration in Levenberg-Marquardt : %d'%mod.count
-		print 'Exec time per iteration : %f'%((t1-t0)/mod.count)
-		print 'root-mean-square deviation : %.4f'%fit.rms(p)
-		p = parameter_proxy(p)
-		return p,chisq,sigma,extconst
-
-	else :
-		c1 = build_constrains(p.nb_params,position=3,intensity=2,irange=[0.,max(A)*1.5],width=3)
-		print 'Amplitude refinement in progress'
-		p0,chisq,sigma = fit.optimize(const=c1)
-		print 'number of iteration in Levenberg-Marquardt : %d'%mod.count
-		print 'root-mean-square deviation : %.4f'%fit.rms(p0)
-		print '-------------------------------------------'
-	
-		print 'Optimization of all parameters in progress, please wait ...'
-		mod.count = 0
-		fit2 = fitting(p0,E,A,Err)
-		fit2.define_func(mod.Ft_I)
-		
-		c2 = build_constrains(p.nb_params,position=2,prange=[0+p0[0],E[-1]*1.2],intensity=2,irange=[0.,max(A)*1.5],width=2,wrange=[0.,2.5])#XXX 
-		t0=time.time()
-		p1,chisq,sigma = fit2.optimize(const=c2)
-		t1=time.time()
-		print 'Exec time for calculation : %f'%(t1-t0)
-		print 'number of iteration in Levenberg-Marquardt : %d'%mod.count
-		print 'Exec time per iteration : %f'%((t1-t0)/mod.count)
-		print 'root-mean-square deviation : %.4f'%fit2.rms(p1)
-		p1 = parameter_proxy(p1)
-		return p1,chisq,sigma,c2
-
 #--------------------------------------------------------------------------------------------------------	
 	
-def Plot(mod,param,E,A):
+def Plot(mod,par_array,E,A, Err, show_graph=1):
 
 	Ech = mod.Ech
 	Sch = mod.Sch
-		
-	plt.plot(E-param.Ec,A,'blue',label='Experimental data')# plot : exp data
+	mod.params_and_functions.par_array[:] = par_array   # Note : we update internal values. We dont change the object reference value 
+	Center = mod.params_and_functions.shapes[0].get_Center()
+	if show_graph : plt.plot(E-Center,A,'blue',label='Experimental data')# plot : exp data
+
 	plt.xlabel("Energy")
 	plt.ylabel("Intensity")
 	plt.title("IXS Spectrum Fitting")
-	
-	
-	for i in range(param.nb_inel_peaks):
-		peak = np.fft.ifft(mod.ft_inel_lines(Sch,param,i)*  mod.resolution_fft  )*mod.npts
 
-		plt.plot(Ech-param.Ec,peak.real,'Cyan',label='Inelastic Contrib %d'%(i+1))
-	
-	convel = np.fft.ifft(ft_line(Sch,param.Ec-mod.xmin,param.get_el().amp,param.get_el().wid)*mod.resolution_fft)*mod.npts
-	plt.plot(Ech-param.Ec,convel.real,'magenta',label='Elastic Contrib.')
-	
-	App = mod.Ft_I(param.get_list(),E,interpolation=0)
-	plt.plot(Ech-param.Ec,App,'red',label='Fitted model')#plot : fitted model	
+	mask=np.zeros(len(mod.params_and_functions.shapes) )
+
+	Ldat = [E-Center , A, Err]
+
+	mask[:]=1	
+	total_model = mod.Ft_I(param, Ech, interpolation=0, mask=mask) # with interpolation=0 Ech is dummy
+	if show_graph : plt.plot(Ech-Center,App,'red',label='Fitted model')	
+
+	Ldat.append(mod.Ft_I(param, E, interpolation=1, mask=mask))
+
+
+	icontribution=0
+	for contribution in mod.params_and_functions.shapes:
+		mask[:]=0
+		mask[icontribution=1]
+		partial_model = mod.Ft_I(param, Ech, interpolation=0, mask=mask) # with interpolation=0 Ech is dummy
+		if icontribution==0:
+			if show_graph : plt.plot(Ech-Center,partial_model,'Cyan',label='Inelastic Contrib %d'%(i+1))	
+		else:
+			if show_graph : plt.plot(Ech-Center,partial_model,'magenta',label='Elastic Contrib.')
+
+		partial_model = mod.Ft_I(param, E, interpolation=1, mask=mask) # with interpolation=0 Ech is dummy
+		Ldat.append(partial_model)
+		icontribution+=1
 
 	fig  = plt.gcf()
 	fig.set_size_inches(8*1.4,6*1.2,forward=True) 
@@ -479,78 +392,7 @@ def Plot(mod,param,E,A):
 	box = ax.get_position()
 	ax.set_position([box.x0, box.y0, box.width*0.8, box.height])
 	plt.legend(loc='upper center', bbox_to_anchor=(1.1, 1), fancybox=True, shadow=True, ncol=1)
-	return
-
-#--------------------------------------------------------------------------------------------------------
-
-def save_params(dirfn, fn, s,d,param,const,T,sigma):
-	if not os.path.exists(dirfn):
-		os.mkdir(dirfn)
-
-	sigEc,sigAel,sigwel = sigma[:3]
-
-	sigppk = sigma[3:]
-	sigtmp = sigppk[:]
-	sigppk = []
-	readable_const = []
-	for a in const:
-		readable_const += [list(a)]
-	
-	for i in range(0,param.nb_inel_peaks*3,3):
-		sigppk += [[sigtmp[i],sigtmp[i+1],sigtmp[i+2]]]
-
-	out = open('%s/%s_%s_%s.param'%(dirfn,fn,s,d),'w')
-	out.write('# Output parameters file\n')
-	out.write('T = %.2f\n'%T)
-	out.write('param = %s\n'%str(param.get_list()))
-	out.write('constrains = %s\n'%str(readable_const))
-	out.write('sigma = %s\n'%str(sigma))
-	out.write('"""\n')
-	out.write('--------------------------------------------------------------\n')
-	out.write('Output parameters :\n')
-	out.write('-------------------------------------------\n')
-	out.write('temperature : %.2f\n'%T)
-	out.write('-------------------------------------------\n')
-	out.write('elastic line :\n')
-	out.write('overall scan shift        [Ec]  = %.4f (%.4f)\n'%(param.Ec,sigEc))
-	out.write('intensity of elastic line [Ael] = %.4f (%.4f)\n'%(param.get_el().amp,sigAel))
-	out.write('width of elastic line     [wel] = %.4f (%.4f)\n'%(param.get_el().wid,sigwel))
-	out.write('-------------------------------------------\n')
-	for i in range(param.nb_inel_peaks):
-		out.write('inelastic line %d :\n'%(i+1))
-		out.write('position of exitation    [E%d] = %.4f (%.4f)\n'%(i+1,param.get_inel(i).pos,sigppk[i][0]))
-		out.write('intensity of exitation   [A%d] = %.4f (%.4f)\n'%(i+1,param.get_inel(i).amp,sigppk[i][1]))
-		out.write('width of inelastic lines [w%d] = %.4f (%.4f)\n'%(i+1,param.get_inel(i).wid,sigppk[i][2]))
-	out.write('--------------------------------------------------------------\n')
-	out.write('"""')
-	out.close()
-
-#--------------------------------------------------------------------------------------------------------
-
-def save_data(dirfn,fn, s,d,param,mod,E,A,Err,T,sigma):
-	if not os.path.exists(dirfn):
-		os.mkdir(dirfn)
-
-	Ech = mod.Ech
-	Sch = mod.Sch
-	
-	fit = mod.Ft_I(param.get_list(),E,interpolation=1)
-	
-	convel = np.fft.ifft(ft_line(Sch,param.Ec-mod.xmin,param.get_el().amp,param.get_el().wid)*mod.resolution_fft)*mod.npts
-	elcontrib = np.interp(E,Ech,convel.real)
-	
-	inelcontrib = []
-	for i in range(param.nb_inel_peaks):
-		inel = np.fft.ifft(mod.ft_inel_lines(Sch,param,i)*mod.resolution_fft )*mod.npts
-		inelinterp = np.interp(E,Ech,inel.real)
-		inelcontrib +=[inelinterp]
-	
-	Ldat = [E-param.Ec,A,Err,fit,elcontrib]
-	for inel in inelcontrib:
-		Ldat+=[inel]
-	datout = np.column_stack(np.array(Ldat))
-	np.savetxt('%s/%s_%s_%s.dat'%(dirfn,fn,s,d), datout, fmt='%14.4f', delimiter=' ')
-
+	return Ldat
 	
 def file_print(dirfn,fn, s,d):
 	if not os.path.exists(dirfn):
@@ -593,11 +435,29 @@ def read_configuration_file(cfgfn,allowed_keys={} ):
 
 #--------------------------------------------------------------------------------------------------------
 
-def define_ext_constrains(param_list,constrains):
-	consttype = {0 : 'Free' ,1 : 'Positive' ,2 : 'Quoted' ,3 : 'Fixed'}
-	pname_dict = build_param_name_dict(len(param_list))
-	
-	
+def build_param_name_dict(params_and_functions):
+	icontribution=0
+	ipar=0
+	res={}
+	for contribution in self.shapes:
+		npars = contribution.nofMyParams()
+		parnames = contribution.parNames()
+		if icontribution==0:
+			# 'elastic line :'
+			for k in range(npars):
+				res[ipar+k] = parnames[k]+"_el"
+		else:
+			# 'inelastic line %d :'%(icontribution+1)
+			res[ipar+k] = parnames[k]+("_%d"%icontribution)
+		icontribution+=1
+		ipar+=npars
+	return res
+
+def interactive_define_ext_constrains(params_and_functions,constrains):
+  consttype = {0 : 'Free' ,1 : 'Positive' ,2 : 'Quoted' ,3 : 'Fixed'}
+  param_list = params_and_functions.par_array
+  while(1):
+	pname_dict = build_param_name_dict(params_and_functions)
 	print '--------------------------------------------------------------'
 	print 'Parameters & associated constrains   '
 	print '-------------------------------------'
@@ -610,10 +470,10 @@ def define_ext_constrains(param_list,constrains):
 		pnum = int(raw_input('Enter key number of the parameter that you would contrain : ').strip())
 	except :
 		print 'Error : Entry is not an allowed key'
-		define_ext_constrains(param_list,constrains)
+		continue
 	if pnum not in pname_dict.keys() :
 		print 'Error : value %s is not an allowed key'%pnum
-		define_ext_constrains(param_list,constrains)
+		continue
 	
 	print '--------------------------------------------------------------'
 	print 'Constrains type : '
@@ -624,11 +484,10 @@ def define_ext_constrains(param_list,constrains):
 		ctype = int(raw_input('What kind of contrain would you like to impose on parameter %s : '%(pname_dict[pnum])).strip()) 
 	except:
 		print 'Error : Entry is not an allowed key'
-		define_ext_constrains(param_list,constrains)
+		continue
 	if ctype not in consttype.keys():
 		print 'Error : value %s is not an allowed key'%ctype
-		define_ext_constrains(param_list,constrains)
-	
+		continue
 	if ctype == 0:  # Free
 		constrains[0][pnum]=0		
 		constrains[1][pnum]=0
@@ -642,7 +501,8 @@ def define_ext_constrains(param_list,constrains):
 			bounds = list(eval(raw_input('Enter bounds for the parameter (2 int or float separated by ",") : ').strip()))
 		except:
 			print 'Error : Last entry has not been written in the correct format'
-			define_ext_constrains(param_list,constrains)
+			continue
+
 		constrains[0][pnum]=2		
 		constrains[1][pnum]=bounds[0]
 		constrains[2][pnum]=bounds[1]
@@ -661,7 +521,7 @@ def define_ext_constrains(param_list,constrains):
 		 		newval = float(newval)
 		 	except:
 		 		print 'Error : Last entry has not been written in the correct format'
-		 		define_ext_constrains(param_list,constrains)
+				continue
 		 	param_list[pnum]=newval
 		else:
 			pass		 
@@ -672,72 +532,62 @@ def define_ext_constrains(param_list,constrains):
 	if redo == '':
 		redo = 'n' 
 	if redo in ['y','Y']:
-		define_ext_constrains(param_list,constrains)
+		continue
 	elif redo in ['n','N']:
-		return param_list,constrains
+		return constrains
 	else : 
 		'Error : Entry is not matching any case, restarting constrains procedure'
-		define_ext_constrains(param_list,constrains)
-
-#--------------------------------------------------------------------------------------------------------
-
-def build_param_name_dict(nbparam):
-	pname_dict = {0:'Ec',1:'Ael',2:'Wel'}
-	for i in range(3,nbparam,3):
-		nbcontrib = i/3
-		pname_dict[i] = 'E%d'%nbcontrib
-		pname_dict[i+1] ='A%d'%nbcontrib
-		pname_dict[i+2] ='W%d'%nbcontrib
-	return pname_dict
-
-#--------------------------------------------------------------------------------------------------------
-# Class peak params
-#--------------------------------------------------------------------------------------------------------
-
-class peak_params(object):
-	def __init__(self,peak_param_list,peak_id=None):
-		self.peak_id=peak_id
-		if peak_id==None:
-			self.Ec = peak_param_list[0]	
-		else : 
-			self.pos= peak_param_list[0]
-		self.amp=peak_param_list[1]
-		self.wid=peak_param_list[2]
+		continue
 
 #--------------------------------------------------------------------------------------------------------
 # Class parameters proxy
 #--------------------------------------------------------------------------------------------------------
-
-class parameter_proxy(object):
-	def __init__(self,param_list):
-		self.param_list = param_list
-		self.nb_params = len(param_list)
-		self.Ec = param_list[0]
-		self.elastic_params = peak_params(param_list[0:3])
-		self.nb_inel_peaks = (len(param_list)-3)/3
-		self.inelastic_params = self.build_inel_object_params_list(param_list[3:])
+class Params_and_Functions:
+	def __init__(self):
+		pass
+	def setParams(self, par_array):
+		self.par_array=par_array
+		self.NusedPar=0
+		self.shapes=[]
+	def setContribution(self, shape_class = shape_class):
+		newshape = shape_class(par_array[self.NusedPar:])
+		self.shapes.append(newshape)
+		self.NusedPar+=newshape.nofMyParams()
 	
-	def build_inel_object_params_list(self,inel_param_list):
-		inelastic_params = []
-		for i in range(0,len(inel_param_list),3):
-			inelastic_params += [peak_params(inel_param_list[i:i+3],peak_id = i)]
-		return inelastic_params
-	
-	def get_list(self):
-		return self.param_list
-	
-	def get_inel(self,peak_id):
-		return self.inelastic_params[peak_id]
-	
-	def get_el(self):
-		return self.elastic_params
-
 	def normalise(self,mod):
 		norm = mod.convolution_function.values_on_real_points (0)   
-		self.get_el().amp *= norm
-		for i in range(self.nb_inel_peaks):
-			self.get_inel(i).amp *= norm
+		npar=self.shapes[0].nofMyParams()
+		for shape in self.shapes[1:]:
+			self.par_array[npar] *=  norm
+			npar += shape.nofMyParams()
 
+	def print_params(self, T,sigma=None, File=sys.stdout):
+		if sigma == None:
+			sigma =  list(np.zeros(self.par_array.shape ))
+
+		
+		print'-------------------------------------------'
+		print'temperature : %.2f'%T
+		print'-------------------------------------------'
+		icontribution=0
+		ipar=0
+		for contribution in self.shapes:
+			npars = contribution.nofMyParams()
+			parnames = contribution.parNames()
+			if icontribution==0:
+				print'elastic line :'
+				for k in range(npars):
+					print 'Elastic %s   = %.4f (%.4f)'%( parnames[k] ,    self.par_array[ipar+k] ,sigma[ipar+k])
+				print'-------------------------------------------'
+			else:
+				print'inelastic line %d :'%(icontribution+1)
+				for k in range(npars):
+					print '%s  inelastic[%d] = %.4f (%.4f)'%( parnames[k] ,  icontribution +1,  self.par_array[ipar+k] ,sigma[ipar+k])
+			icontribution+=1
+			ipar+=npars
+
+		print'--------------------------------------------------------'
+			
 def get_dotstripped_path_name( name ):
 	posslash=name.rfind("/")
 	posdot  =name.rfind(".")
@@ -815,30 +665,69 @@ def main(argv):
 			wel,wj =0.1,0.1 #widths of elastic and excitation peaks (initial guess)
 			param_list[0,2]=wel
 			param_list[1:,2]=wj
-			param  = parameter_proxy(param_list.flatten())
-			param.normalise(mod) 
+
+			# setting up the model
+			params_and_functions = Params_and_Functions()
+			params_and_functions.setParams(param_list.flatten())
+			# //////////////////////////// contributions
+			params_and_functions.setContribution(shape_class=Line) # elastic line
+			for i in range(len(xy)-1):
+				params_and_functions.setContribution(shape_class=Line)
+			params_and_functions.normalise(mod) 
 			print '--------------------------------------------------------------'
 			print 'Input parameters :'
-			print_params(param,cfg.T)			
+			params_and_functions.print_params(cfg.T, File=sys.stdout)
+
+			mod.set_Params_and_Functions(params_and_functions)
+			
 		else:
 			skip=False
 		
 		if not skip:
+			mod.count = 0
+			t0=time.time()
+			
+			if const is not None:
+				refined_param, chisq, sigmapar = Gefit.LeastSquaresFit(mod.Ft_I ,params_and_functions.par_array ,
+										       constrains=const ,xdata=Ene_array , 
+										       ydata= Intens_array,
+										       sigmadata=Intens_Err)
+			else:
+				const1 = default_build_constrains(params_and_functions ,position=3,intensity=2,irange=[0.,max(Intens_array)*1.5],width=3)
+				refined_param, chisq, sigmapar = Gefit.LeastSquaresFit(mod.Ft_I ,params_and_functions.par_array ,
+										       constrains=const1 ,xdata=Ene_array , 
+										       ydata= Intens_array,
+										       sigmadata=Intens_Err)
+				const2 = default_build_constrains(params_and_functions,position=2, # refined_param[0] est supposedly le centre de elastic
+							  prange=[0+refined_param[0],Ene_array[-1]*1.2],intensity=2,irange=[0.,max(Intens_array)*1.5],width=2,wrange=[0.,2.5])#XXX 
+				refined_param, chisq, sigmapar = Gefit.LeastSquaresFit(mod.Ft_I ,params_and_functions.par_array ,
+										       constrains=const2 ,xdata=Ene_array , 
+										       ydata= Intens_array,
+										       sigmadata=Intens_Err)
+			t1=time.time()
+			print 'Exec time for calculation : %f'%(t1-t0)
+			print 'number of iteration in Levenberg-Marquardt : %d'%mod.count
+			print 'Exec time per iteration : %f'%((t1-t0)/mod.count)
+			mod.params_and_functions.par_array[:] =  refined_param  # Note : we update internal values. We dont change the object reference value 
+			print 'root-mean-square deviation : %.4f'%  np.sqrt(np.sum(((Intens_array-mod.Ft_I(refined_param,Ene_array ))**2)))/len(Ene_array)
 
-			refined_param,chisq,sigma,const = Fit(mod,param,Ene_array ,Intens_array, Intens_Err, extconst=const)
-			Plot(mod,refined_param,Ene_array,Intens_array)
+			plotted_datas = Plot(mod,refined_param,Ene_array,Intens_array, Err, show_graph=1) # this function xould be used also just
+			# for grabbing data columns :  Ldat = [E-Center , A, Err,tot, el, inel1, inel2 ...]
 
 			print '--------------------------------------------------------------'
 			print 'Output parameters :'
-			print_params(refined_param,cfg.T,sigma)
-			
+			params_and_functions.print_params(cfg.T,sigma, File=sys.stdout)   # on the screen
 			output_dir, output_stripped_name  = get_dotstripped_path_name(hdf.filename)
+			if not os.path.exists(output_dir):
+				os.mkdir(dirfn)
+			out = open('%s/%s_%s_%s.param'%(output_dir,output_stripped_name ,scan_num,detect_num),'w')
+			params_and_functions.print_params(cfg.T,sigma, File=out)  # on file
+			out=None
 
-			save_params( output_dir, output_stripped_name       , scan_num , detect_num ,refined_param,const,cfg.T,sigma=sigma)
-			save_data  ( output_dir, output_stripped_name       , scan_num , detect_num ,refined_param,mod,Ene_array ,Intens_array, Intens_Err,cfg.T,sigma=sigma)
+			np.savetxt('%s/%s_%s_%s.dat'%(dirfn,fn,s,d), np.array(Ldat), fmt='%14.4f', delimiter=' ')
+
 			file_print ( output_dir, output_stripped_name       ,  scan_num , detect_num)
 
-			param = parameter_proxy(refined_param.get_list())
 			plt.show(block=False)
 
 			interactive_Entry=True
@@ -854,9 +743,8 @@ def main(argv):
 				else :
 					cfg.T = float(T)
 			elif r in ['r','R']:
-				param_list = param.get_list()
-				new_param_list,const = define_ext_constrains(param_list,const)
-				param = parameter_proxy(new_param_list)
+				const = interactive_define_ext_constrains(params_and_functions,const) # this function might change internal values
+				                                                          # of params_and_functions.par_array
 				interactive_Entry=False
 			else:
 				pass # will continue as default
