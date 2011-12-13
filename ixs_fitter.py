@@ -55,6 +55,8 @@ class LineModel:
 
 	def get_Center(self):
 		return self.Center
+	def get_Height(self):
+		return self.Height
 
 	def ft_and_derivatives(self, reciprocal_grid, real_grid_origin, Stokes=+1 ):
 		result=np.zeros(   [   1+self.nofMyParams()  , len(reciprocal_grid),    ] ,"D"  )
@@ -365,7 +367,7 @@ def Plot(mod,par_array,E,A, Err, show_graph=1):
 
 	mask=np.zeros(len(mod.params_and_functions.shapes) )
 
-	Ldat = [E-Center , A, Err]
+	Ldat = [E , A, Err]
 
 	mask[:]=1	
 	total_model = mod.Ft_I(par_array , Ech, interpolation=0, mask=mask) # with interpolation=0 Ech is dummy
@@ -381,9 +383,11 @@ def Plot(mod,par_array,E,A, Err, show_graph=1):
 		mask[icontribution]=1
 		partial_model = mod.Ft_I(par_array, Ech, interpolation=0, mask=mask) # with interpolation=0 Ech is dummy
 		if icontribution>0:
-			if show_graph : plt.plot(Ech-Center,partial_model,'Cyan',label='Inelastic Contrib %d'%(icontribution+1))	
+			if show_graph : plt.plot(Ech,partial_model,'Cyan',label='Inelastic Contrib %d'%(icontribution+1))	
+			# if show_graph : plt.plot(Ech-Center,partial_model,'Cyan',label='Inelastic Contrib %d'%(icontribution+1))	
 		else:
-			if show_graph : plt.plot(Ech-Center,partial_model,'magenta',label='Elastic Contrib.')
+			if show_graph : plt.plot(Ech,partial_model,'magenta',label='Elastic Contrib.')
+			# if show_graph : plt.plot(Ech-Center,partial_model,'magenta',label='Elastic Contrib.')
 
 		partial_model = mod.Ft_I(par_array, E, interpolation=1, mask=mask) # with interpolation=0 Ech is dummy
 		Ldat.append(partial_model)
@@ -451,7 +455,8 @@ def build_param_name_dict(params_and_functions):
 				res[ipar+k] = parnames[k]+"_el"
 		else:
 			# 'inelastic line %d :'%(icontribution+1)
-			res[ipar+k] = parnames[k]+("_%d"%icontribution)
+			for k in range(npars):
+				res[ipar+k] = parnames[k]+("_%d"%icontribution)
 		icontribution+=1
 		ipar+=npars
 	return res
@@ -564,10 +569,14 @@ class Params_and_Functions:
 			self.par_array[npar+1] /= norm # or by  mod.reso_ifft_max : must be the same
 			npar += shape.nofMyParams()
 
+	def  maxheight(self):
+		maxres=0
+		for shape in self.shapes:
+			maxres=max(maxres,shape.get_Height())
+		return maxres
 	def print_params(self, T,sigma=None, File=sys.stdout):
 		if sigma == None:
 			sigma =  list(np.zeros(self.par_array.shape ))
-
 		
 		print'-------------------------------------------'
 		print'temperature : %.2f'%T
@@ -699,15 +708,15 @@ def main(argv):
 				# Plot(mod,params_and_functions.par_array,Ene_array,Intens_array, Intens_Err, show_graph=1)
 				# plt.show()
 
-				const1 = default_build_constrains(params_and_functions ,position=3,intensity=2,irange=[0.,max(Intens_array)*1.5],width=3)
+				const = default_build_constrains(params_and_functions ,position=3,intensity=2,irange=[0.,params_and_functions.maxheight()*2],width=3)
 				refined_param, chisq, sigmapar = Gefit.LeastSquaresFit(mod.Ft_I ,params_and_functions.par_array ,
-										       constrains=const1 ,xdata=Ene_array , 
+										       constrains=const ,xdata=Ene_array , 
 										       ydata= Intens_array,
 										       sigmadata=Intens_Err)
-				const2 = default_build_constrains(params_and_functions,position=2, # refined_param[0] est supposedly le centre de elastic
-							  prange=[0+refined_param[0],Ene_array[-1]*1.2],intensity=2,irange=[0.,max(Intens_array)*1.5],width=2,wrange=[0.,2.5])#XXX 
+				const = default_build_constrains(params_and_functions,position=2, # refined_param[0] est supposedly le centre de elastic
+							  prange=[0+refined_param[0],Ene_array[-1]*1.2],intensity=2,irange=[0.,params_and_functions.maxheight()*2],width=2,wrange=[0.,2.5])#XXX 
 				refined_param, chisq, sigmapar = Gefit.LeastSquaresFit(mod.Ft_I ,params_and_functions.par_array ,
-										       constrains=const2 ,xdata=Ene_array , 
+										       constrains=const ,xdata=Ene_array , 
 										       ydata= Intens_array,
 										       sigmadata=Intens_Err)
 			t1=time.time()
