@@ -35,20 +35,6 @@ from PyMca import Gefit
 
 
 
-
-def line(x,x0,A,w):
-	""" normalised area lorenzian modeling inelastic line (integral = 1)"""
-	return (2.*A/np.pi)*(w/(4.*(x-x0)**2+w**2))
-
-def gauss(x,x0,A,w):
-	""" normalised area gaussian"""
-	return A*np.sqrt(4.*np.log(2)/np.pi)*(1./w)*np.exp(-((4.*np.log(2))/(w**2))*(x-x0)**2)
-
-def pseudo_voigt(E,mu,wL,wG):
-	"""amplitude pseudo-voigt used as resolution function"""
-	return mu * line(E,0.,1.,wL) + (1-mu) * gauss(E,0.,1.,wG)
-
-
 #--------------------------------------------------------------------------------------------------------
 # Basic function Model
 #--------------------------------------------------------------------------------------------------------
@@ -70,31 +56,47 @@ class LineModel:
 	def get_Center(self):
 		return self.Center
 
-	def ft_and_derivatives(self, reciprocal_grid, real_grid_origin, Stokes=True ):
-		result=np.zeros(   [  len(reciprocal_grid),    1+self.nofMyParams()  ]   )
-		if Stokes:
-			Center =  self.Center - real_grid_origin
-		else:
-			Center = -self.Center - real_grid_origin
+	def ft_and_derivatives(self, reciprocal_grid, real_grid_origin, Stokes=+1 ):
+		result=np.zeros(   [   1+self.nofMyParams()  , len(reciprocal_grid),    ] ,"D"  )
 
-		result [:,2] = ft_line( reciprocal_grid, Center ,1.0, self.W    )
-		result [:,0] = self.Height*result [:,2]
-		result [:,1] = self.Height*result [:,1]*( -1.0j*reciprocal_grid)
-		result [:,3] = self.Height*result [:,1]*( -1.0/2*abs(reciprocal_grid))
+		if Stokes==-1:
+			Center = Stokes* self.Center - real_grid_origin
+		else:
+			Center =  self.Center - real_grid_origin
+
+		result [2,:] = ft_line( reciprocal_grid, Center ,1.0, self.W    )
+		result [0,:] = self.Height*result [2,:]
+		result [1,:] = self.Height*result [0,:]*( -1.0j*reciprocal_grid)
+		result [3,:] = self.Height*result [0,:]*( -1.0/2*abs(reciprocal_grid))
 		
 
+		return result
 #--------------------------------------------------------------------------------------------------------
 # Basic FT function Model
 #--------------------------------------------------------------------------------------------------------
 
 
+def line(x,x0,A,w):
+	""" normalised area lorenzian modeling inelastic line (integral = 1)"""
+	return (2.*A/np.pi)*(w/(4.*(x-x0)**2+w**2))
+
+def gauss(x,x0,A,w):
+	""" normalised area gaussian"""
+	return A*np.sqrt(4.*np.log(2)/np.pi)*(1./w)*np.exp(-((4.*np.log(2))/(w**2))*(x-x0)**2)
+
+def pseudo_voigt(E,mu,wL,wG):
+	"""amplitude pseudo-voigt used as resolution function"""
+	return mu * line(E,0.,1.,wL) + (1-mu) * gauss(E,0.,1.,wG)
+
+
+
 def ft_line(k,x0,A,w):
 	""" Fourier transform of normalised area lorenzian modeling elastic line (integral = 1)"""
-	return A*np.exp(-1.0j*k*(x0) - w/2.*abs(k))
+	return np.array(A*np.exp(-1.0j*k*(x0) - w*abs(k)/2.0) ,"D")
 	
 def ft_gauss(k,x0,A,w):
 	""" Fourier transform of normalised area gaussian"""
-	return A*((np.exp(-(k**2*w**2)/(16*np.log(2))))/(np.sqrt(1./w**2)*w))*np.exp(-1.0j*k*(x0))
+	return np.array(A*np.exp(-((k**2)*(w**2))/(16*np.log(2)) )  *np.exp(-1.0j*k*(x0)) ,"D")
 
 def ft_pseudo_voigt(S,mu,wL,wG):
 	"""Fourier transform of amplitude pseudo-voigt used as resolution function"""
@@ -111,9 +113,9 @@ class PseudoVoigt:
 		self.lorentz_w=lorentz_w
 
 	def safe_scale_length(self):
-		return  min(self.lorentz_w/5,self.gaussian_w) 
+		return  min(self.lorentz_w/40,self.gaussian_w/40) 
 	def safe_margin(self):
-		 return 10*self.lorentz_w+3*self.gaussian_w
+		 return 5*self.lorentz_w+3*self.gaussian_w
 	 
 	def values_on_real_points(self,x ):
 		 return   pseudo_voigt(x ,  self.mu,self.lorentz_w ,self.gaussian_w )
@@ -129,32 +131,31 @@ class PseudoVoigt:
 
 class Model:
 	def __init__(self,T,E,res_param, convolution_function):
-
 		self.convolution_function = convolution_function
 		safe_step = self.convolution_function.safe_scale_length() 
 		safe_margin = self.convolution_function.safe_margin() 
 		
-
 		self.T = T
 		self.kb = 1.3806504e-23/1.602176462e-22
 		self.E = E
-		self.orig_xmin= E[0]  - safe_margin
-		self.orig_xmax= E[-1] + safe_margin
+		self.orig_xmin= E[0]  
+		self.orig_xmax= E[-1] 
 		self.xmin= E[0]  - safe_margin
 		self.xmax= E[-1] + safe_margin
 
 		self.norm = (self.xmax - self.xmin)
 		self.npts = sup_pow_2(self.norm/(safe_step))
 
-		
+		self.fact4fft = self.npts/( self.xmax- self.xmin )
+
 		self.Ech = np.arange(self.xmin,self.xmax,float((self.xmax-self.xmin))/self.npts)
 		self.Sch = np.fft.fftshift(np.arange(-self.npts*np.pi/self.norm,self.npts*np.pi/self.norm,2*np.pi/self.norm))
 		
-		self.resolution_fft = self.convolution_function.values_on_reciprocal_points(self.Sch)  
+		self.resolution_fft = self.fact4fft* self.convolution_function.values_on_reciprocal_points(self.Sch)  
+		self.reso_ifft_max = np.fft.ifft(self.resolution_fft)[0]
 
 		self.count=0
 	
-
 	def	set_Params_and_Functions(self, params_and_functions):
 		self.params_and_functions=params_and_functions
 
@@ -163,7 +164,7 @@ class Model:
 	
 	def Ft_I(self,p, E, interpolation=1, mask=None, convolution=1): 
 		""" Interface """
-		
+		self.count+=1
 		# update variables in self.params_and_functions
 		self.params_and_functions.par_array[:] = p   # Note : we update internal values. We dont change the object reference value 
 		if mask is None:
@@ -171,37 +172,37 @@ class Model:
 
 		icontribution=0
 		ipar=0
+		result=0.0
 		for contribution in self.params_and_functions.shapes:
 			npars = contribution.nofMyParams()
 			parnames = contribution.parNames()
-			result=0.0
-			fact=1.0*mask[icontribution]
+			fact=self.fact4fft*mask[icontribution]
 			if icontribution==0:
-				value_and_deri =  contribution.ft_and_derivatives( reciprocal_grid.Sch, self.xmin ,self.T, Stokes=0 )
+				value_and_deri =  contribution.ft_and_derivatives( self.Sch, self.xmin , Stokes=0 )
 				result=result+value_and_deri [0]*fact  # so far we exploit only function itself not derivatives..
 				el_center = contribution.get_Center()
 			else:
-				value_and_deri =  contribution.ft_and_derivatives( reciprocal_grid.Sch, self.xmin , Stokes=+1 )
+				value_and_deri =  contribution.ft_and_derivatives( self.Sch, self.xmin , Stokes=+1 )
 				result=result+value_and_deri [0]*fact
 
 				inel_center = contribution.get_Center()
 				fact = fact* np.exp(-(inel_center-el_center)/(self.kb*self.T))
-				value_and_deri =  contribution.ft_and_derivatives( reciprocal_grid.Sch, self.xmin , Stokes=-1 )*fact
+				value_and_deri =  contribution.ft_and_derivatives( self.Sch, self.xmin , Stokes=-1 )
 
-				result=result+value_and_deri [0]
+				result=result+value_and_deri [0]*fact
 
 			icontribution+=1
 			ipar+=npars
 
 
 		if convolution:
-			result = np.fft.ifft(result*   self.resolution_fft )*npts
+			result = np.fft.ifft(result*   self.resolution_fft )/self.fact4fft
 		else:
 			result = np.fft.ifft(result  ) 
 
 		result = result.real
 		if interpolation:
-			return np.interp(E,Ech,result)
+			return np.interp(E,self.Ech,result)
 		else :
 			return result
 
@@ -322,18 +323,18 @@ def default_build_constrains( params_and_functions   ,position=0,prange=[],inten
 	if wrange ==[]: prange=0.0,10.0
 
 	indicators = {"Center":position ,"Height":intensity,"Width":width }
-	indicators_limit = {"Center":prange ,"Height":irange,"Width":wrange }
+	indicators_limits = {"Center":prange ,"Height":irange,"Width":wrange }
 
 	c = list(np.zeros((3, len(params_and_functions.par_array)  )))
 	icontribution=0
 	ipar=0
-	for contribution in self.shapes:
+	for contribution in params_and_functions.shapes:
 		npars = contribution.nofMyParams()
 		parnames = contribution.parNames()
 		if icontribution==0:
 			# 'elastic line : everything is free'			
 			for k in range(npars):
-				c[0][ipar+k],c[1][ipar+k], c[2][ipar+k] =0 # Free
+				c[0][ipar+k],c[1][ipar+k], c[2][ipar+k] =0,0,0 # Free
 		else:
 			# 'inelastic line %d :'%(icontribution+1)
 			for k in range(npars):
@@ -342,7 +343,7 @@ def default_build_constrains( params_and_functions   ,position=0,prange=[],inten
 					if indicators[parnames[k]]==2:
 						c[1][ipar+k],c[2][ipar+k] =indicators_limits[parnames[k]]
 					else:
-						c[0][ipar+k],c[1][ipar+k], c[2][ipar+k] =0 # Free
+						c[0][ipar+k],c[1][ipar+k], c[2][ipar+k] =0,0,0 # Free
 		icontribution+=1
 		ipar+=npars
 	return c
@@ -355,7 +356,8 @@ def Plot(mod,par_array,E,A, Err, show_graph=1):
 	Sch = mod.Sch
 	mod.params_and_functions.par_array[:] = par_array   # Note : we update internal values. We dont change the object reference value 
 	Center = mod.params_and_functions.shapes[0].get_Center()
-	if show_graph : plt.plot(E-Center,A,'blue',label='Experimental data')# plot : exp data
+	if show_graph : plt.plot(E,A,'blue',label='Experimental data')# plot : exp data
+	# if show_graph : plt.plot(E-Center,A,'blue',label='Experimental data')# plot : exp data
 
 	plt.xlabel("Energy")
 	plt.ylabel("Intensity")
@@ -366,23 +368,24 @@ def Plot(mod,par_array,E,A, Err, show_graph=1):
 	Ldat = [E-Center , A, Err]
 
 	mask[:]=1	
-	total_model = mod.Ft_I(param, Ech, interpolation=0, mask=mask) # with interpolation=0 Ech is dummy
-	if show_graph : plt.plot(Ech-Center,App,'red',label='Fitted model')	
+	total_model = mod.Ft_I(par_array , Ech, interpolation=0, mask=mask) # with interpolation=0 Ech is dummy
+	if show_graph : plt.plot(Ech,total_model,'red',label='Fitted model')	
+	# if show_graph : plt.plot(Ech-Center,total_model,'red',label='Fitted model')	
 
-	Ldat.append(mod.Ft_I(param, E, interpolation=1, mask=mask))
+	Ldat.append(mod.Ft_I(par_array, E, interpolation=1, mask=mask))
 
 
 	icontribution=0
 	for contribution in mod.params_and_functions.shapes:
 		mask[:]=0
-		mask[icontribution=1]
-		partial_model = mod.Ft_I(param, Ech, interpolation=0, mask=mask) # with interpolation=0 Ech is dummy
-		if icontribution==0:
-			if show_graph : plt.plot(Ech-Center,partial_model,'Cyan',label='Inelastic Contrib %d'%(i+1))	
+		mask[icontribution]=1
+		partial_model = mod.Ft_I(par_array, Ech, interpolation=0, mask=mask) # with interpolation=0 Ech is dummy
+		if icontribution>0:
+			if show_graph : plt.plot(Ech-Center,partial_model,'Cyan',label='Inelastic Contrib %d'%(icontribution+1))	
 		else:
 			if show_graph : plt.plot(Ech-Center,partial_model,'magenta',label='Elastic Contrib.')
 
-		partial_model = mod.Ft_I(param, E, interpolation=1, mask=mask) # with interpolation=0 Ech is dummy
+		partial_model = mod.Ft_I(par_array, E, interpolation=1, mask=mask) # with interpolation=0 Ech is dummy
 		Ldat.append(partial_model)
 		icontribution+=1
 
@@ -439,7 +442,7 @@ def build_param_name_dict(params_and_functions):
 	icontribution=0
 	ipar=0
 	res={}
-	for contribution in self.shapes:
+	for contribution in params_and_functions.shapes:
 		npars = contribution.nofMyParams()
 		parnames = contribution.parNames()
 		if icontribution==0:
@@ -549,16 +552,16 @@ class Params_and_Functions:
 		self.par_array=par_array
 		self.NusedPar=0
 		self.shapes=[]
-	def setContribution(self, shape_class = shape_class):
-		newshape = shape_class(par_array[self.NusedPar:])
+	def setContribution(self, shape_class = None):
+		newshape = shape_class(self.par_array[self.NusedPar:])
 		self.shapes.append(newshape)
 		self.NusedPar+=newshape.nofMyParams()
 	
 	def normalise(self,mod):
 		norm = mod.convolution_function.values_on_real_points (0)   
-		npar=self.shapes[0].nofMyParams()
-		for shape in self.shapes[1:]:
-			self.par_array[npar] *=  norm
+		npar=0
+		for shape in self.shapes:
+			self.par_array[npar+1] /= norm # or by  mod.reso_ifft_max : must be the same
 			npar += shape.nofMyParams()
 
 	def print_params(self, T,sigma=None, File=sys.stdout):
@@ -670,9 +673,9 @@ def main(argv):
 			params_and_functions = Params_and_Functions()
 			params_and_functions.setParams(param_list.flatten())
 			# //////////////////////////// contributions
-			params_and_functions.setContribution(shape_class=Line) # elastic line
+			params_and_functions.setContribution(shape_class=LineModel) # elastic line
 			for i in range(len(xy)-1):
-				params_and_functions.setContribution(shape_class=Line)
+				params_and_functions.setContribution(shape_class=LineModel)
 			params_and_functions.normalise(mod) 
 			print '--------------------------------------------------------------'
 			print 'Input parameters :'
@@ -693,6 +696,9 @@ def main(argv):
 										       ydata= Intens_array,
 										       sigmadata=Intens_Err)
 			else:
+				# Plot(mod,params_and_functions.par_array,Ene_array,Intens_array, Intens_Err, show_graph=1)
+				# plt.show()
+
 				const1 = default_build_constrains(params_and_functions ,position=3,intensity=2,irange=[0.,max(Intens_array)*1.5],width=3)
 				refined_param, chisq, sigmapar = Gefit.LeastSquaresFit(mod.Ft_I ,params_and_functions.par_array ,
 										       constrains=const1 ,xdata=Ene_array , 
@@ -709,22 +715,22 @@ def main(argv):
 			print 'number of iteration in Levenberg-Marquardt : %d'%mod.count
 			print 'Exec time per iteration : %f'%((t1-t0)/mod.count)
 			mod.params_and_functions.par_array[:] =  refined_param  # Note : we update internal values. We dont change the object reference value 
-			print 'root-mean-square deviation : %.4f'%  np.sqrt(np.sum(((Intens_array-mod.Ft_I(refined_param,Ene_array ))**2)))/len(Ene_array)
+			print 'root-mean-square deviation : %.4f'%  (np.sqrt(np.sum(((Intens_array-mod.Ft_I(refined_param,Ene_array ))**2)))/len(Ene_array))
 
-			plotted_datas = Plot(mod,refined_param,Ene_array,Intens_array, Err, show_graph=1) # this function xould be used also just
+			plotted_datas = Plot(mod,refined_param,Ene_array,Intens_array,Intens_Err , show_graph=1) # this function xould be used also just
 			# for grabbing data columns :  Ldat = [E-Center , A, Err,tot, el, inel1, inel2 ...]
 
 			print '--------------------------------------------------------------'
 			print 'Output parameters :'
-			params_and_functions.print_params(cfg.T,sigma, File=sys.stdout)   # on the screen
+			params_and_functions.print_params(cfg.T,sigmapar, File=sys.stdout)   # on the screen
 			output_dir, output_stripped_name  = get_dotstripped_path_name(hdf.filename)
 			if not os.path.exists(output_dir):
 				os.mkdir(dirfn)
 			out = open('%s/%s_%s_%s.param'%(output_dir,output_stripped_name ,scan_num,detect_num),'w')
-			params_and_functions.print_params(cfg.T,sigma, File=out)  # on file
+			params_and_functions.print_params(cfg.T,sigmapar, File=out)  # on file
 			out=None
-
-			np.savetxt('%s/%s_%s_%s.dat'%(dirfn,fn,s,d), np.array(Ldat), fmt='%14.4f', delimiter=' ')
+			print np.array(plotted_datas).shape
+			np.savetxt('%s/%s_%s_%s.dat'%(output_dir,output_stripped_name,scan_num,detect_num), np.array(plotted_datas), fmt='%14.4f', delimiter=' ')
 
 			file_print ( output_dir, output_stripped_name       ,  scan_num , detect_num)
 
