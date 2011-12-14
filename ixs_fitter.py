@@ -333,19 +333,17 @@ def default_build_constrains( params_and_functions   ,position=0,prange=[],inten
 	for contribution in params_and_functions.shapes:
 		npars = contribution.nofMyParams()
 		parnames = contribution.parNames()
-		if icontribution==0:
-			# 'elastic line : everything is free'			
-			for k in range(npars):
+		# 'inelastic line %d :'%(icontribution+1)
+		for k in range(npars):
+			if k == 0:
 				c[0][ipar+k],c[1][ipar+k], c[2][ipar+k] =0,0,0 # Free
 		else:
-			# 'inelastic line %d :'%(icontribution+1)
-			for k in range(npars):
-				if indicators.has_key( parnames[k]) and indicators[parnames[k]]: 
-					c[0][ipar+k]=indicators[parnames[k]]
-					if indicators[parnames[k]]==2:
-						c[1][ipar+k],c[2][ipar+k] =indicators_limits[parnames[k]]
-					else:
-						c[0][ipar+k],c[1][ipar+k], c[2][ipar+k] =0,0,0 # Free
+			if indicators.has_key(parnames[k]) and indicators[parnames[k]]: 
+				c[0][ipar+k]=indicators[parnames[k]]
+				if indicators[parnames[k]]==2:
+					c[1][ipar+k],c[2][ipar+k] =indicators_limits[parnames[k]]
+				else:
+					c[0][ipar+k],c[1][ipar+k], c[2][ipar+k] =0,0,0 # Free
 		icontribution+=1
 		ipar+=npars
 	return c
@@ -353,13 +351,12 @@ def default_build_constrains( params_and_functions   ,position=0,prange=[],inten
 #--------------------------------------------------------------------------------------------------------	
 	
 def Plot(mod,par_array,E,A, Err, show_graph=1):
-
+	plt.xlim((min(E),max(E)))
 	Ech = mod.Ech
 	Sch = mod.Sch
 	mod.params_and_functions.par_array[:] = par_array   # Note : we update internal values. We dont change the object reference value 
 	Center = mod.params_and_functions.shapes[0].get_Center()
-	if show_graph : plt.plot(E,A,'blue',label='Experimental data')# plot : exp data
-	# if show_graph : plt.plot(E-Center,A,'blue',label='Experimental data')# plot : exp data
+	if show_graph : plt.plot(E-Center,A,'blue',label='Experimental data')# plot : exp data
 
 	plt.xlabel("Energy")
 	plt.ylabel("Intensity")
@@ -371,8 +368,7 @@ def Plot(mod,par_array,E,A, Err, show_graph=1):
 
 	mask[:]=1	
 	total_model = mod.Ft_I(par_array , Ech, interpolation=0, mask=mask) # with interpolation=0 Ech is dummy
-	if show_graph : plt.plot(Ech,total_model,'red',label='Fitted model')	
-	# if show_graph : plt.plot(Ech-Center,total_model,'red',label='Fitted model')	
+	if show_graph : plt.plot(Ech-Center,total_model,'red',label='Fitted model')	
 
 	Ldat.append(mod.Ft_I(par_array, E, interpolation=1, mask=mask))
 
@@ -383,11 +379,9 @@ def Plot(mod,par_array,E,A, Err, show_graph=1):
 		mask[icontribution]=1
 		partial_model = mod.Ft_I(par_array, Ech, interpolation=0, mask=mask) # with interpolation=0 Ech is dummy
 		if icontribution>0:
-			if show_graph : plt.plot(Ech,partial_model,'Cyan',label='Inelastic Contrib %d'%(icontribution+1))	
-			# if show_graph : plt.plot(Ech-Center,partial_model,'Cyan',label='Inelastic Contrib %d'%(icontribution+1))	
+			if show_graph : plt.plot(Ech-Center,partial_model,'Cyan',label='Inelastic Contrib %d'%(icontribution+1))	
 		else:
-			if show_graph : plt.plot(Ech,partial_model,'magenta',label='Elastic Contrib.')
-			# if show_graph : plt.plot(Ech-Center,partial_model,'magenta',label='Elastic Contrib.')
+			if show_graph : plt.plot(Ech-Center,partial_model,'magenta',label='Elastic Contrib.')
 
 		partial_model = mod.Ft_I(par_array, E, interpolation=1, mask=mask) # with interpolation=0 Ech is dummy
 		Ldat.append(partial_model)
@@ -574,31 +568,32 @@ class Params_and_Functions:
 		for shape in self.shapes:
 			maxres=max(maxres,shape.get_Height())
 		return maxres
+
 	def print_params(self, T,sigma=None, File=sys.stdout):
 		if sigma == None:
 			sigma =  list(np.zeros(self.par_array.shape ))
 		
-		print'-------------------------------------------'
-		print'temperature : %.2f'%T
-		print'-------------------------------------------'
+		File.write('-------------------------------------------\n')
+		File.write('temperature : %.2f\n'%T)
+		File.write('-------------------------------------------\n')
 		icontribution=0
 		ipar=0
 		for contribution in self.shapes:
 			npars = contribution.nofMyParams()
 			parnames = contribution.parNames()
 			if icontribution==0:
-				print'elastic line :'
+				File.write('Elastic line :\n')
 				for k in range(npars):
-					print 'Elastic %s   = %.4f (%.4f)'%( parnames[k] ,    self.par_array[ipar+k] ,sigma[ipar+k])
-				print'-------------------------------------------'
+					File.write( '%s   = %.4f (%.4f)\n'%( parnames[k] ,    self.par_array[ipar+k] ,sigma[ipar+k]))
+				File.write('-------------------------------------------\n')
 			else:
-				print'inelastic line %d :'%(icontribution+1)
+				File.write('Inelastic line %d :\n'%(icontribution))
 				for k in range(npars):
-					print '%s  inelastic[%d] = %.4f (%.4f)'%( parnames[k] ,  icontribution +1,  self.par_array[ipar+k] ,sigma[ipar+k])
+					File.write( '%s[%d] = %.4f (%.4f)\n'%( parnames[k] ,  icontribution,  self.par_array[ipar+k] ,sigma[ipar+k]))
 			icontribution+=1
 			ipar+=npars
 
-		print'--------------------------------------------------------'
+		File.write('--------------------------------------------------------\n')
 			
 def get_dotstripped_path_name( name ):
 	posslash=name.rfind("/")
@@ -713,7 +708,7 @@ def main(argv):
 										       constrains=const ,xdata=Ene_array , 
 										       ydata= Intens_array,
 										       sigmadata=Intens_Err)
-				const = default_build_constrains(params_and_functions,position=2, # refined_param[0] est supposedly le centre de elastic
+				const = default_build_constrains(params_and_functions,position=2, # refined_param[0] est suppose etre le centre de la ligne elastic
 							  prange=[0+refined_param[0],Ene_array[-1]*1.2],intensity=2,irange=[0.,params_and_functions.maxheight()*2],width=2,wrange=[0.,2.5])#XXX 
 				refined_param, chisq, sigmapar = Gefit.LeastSquaresFit(mod.Ft_I ,params_and_functions.par_array ,
 										       constrains=const ,xdata=Ene_array , 
@@ -726,7 +721,7 @@ def main(argv):
 			mod.params_and_functions.par_array[:] =  refined_param  # Note : we update internal values. We dont change the object reference value 
 			print 'root-mean-square deviation : %.4f'%  (np.sqrt(np.sum(((Intens_array-mod.Ft_I(refined_param,Ene_array ))**2)))/len(Ene_array))
 
-			plotted_datas = Plot(mod,refined_param,Ene_array,Intens_array,Intens_Err , show_graph=1) # this function xould be used also just
+			plotted_datas = Plot(mod,refined_param,Ene_array,Intens_array,Intens_Err , show_graph=1) # this function would be used also just
 			# for grabbing data columns :  Ldat = [E-Center , A, Err,tot, el, inel1, inel2 ...]
 
 			print '--------------------------------------------------------------'
@@ -738,8 +733,8 @@ def main(argv):
 			out = open('%s/%s_%s_%s.param'%(output_dir,output_stripped_name ,scan_num,detect_num),'w')
 			params_and_functions.print_params(cfg.T,sigmapar, File=out)  # on file
 			out=None
-			print np.array(plotted_datas).shape
-			np.savetxt('%s/%s_%s_%s.dat'%(output_dir,output_stripped_name,scan_num,detect_num), np.array(plotted_datas), fmt='%14.4f', delimiter=' ')
+			#print np.array(plotted_datas).shape
+			np.savetxt('%s/%s_%s_%s.dat'%(output_dir,output_stripped_name,scan_num,detect_num), np.column_stack(np.array(plotted_datas)), fmt='%14.4f', delimiter=' ')
 
 			file_print ( output_dir, output_stripped_name       ,  scan_num , detect_num)
 
@@ -759,7 +754,7 @@ def main(argv):
 					cfg.T = float(T)
 			elif r in ['r','R']:
 				const = interactive_define_ext_constrains(params_and_functions,const) # this function might change internal values
-				                                                          # of params_and_functions.par_array
+				                                                                      # of params_and_functions.par_array
 				interactive_Entry=False
 			else:
 				pass # will continue as default
