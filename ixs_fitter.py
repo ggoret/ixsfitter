@@ -243,69 +243,87 @@ def zeroinv(v):
 #--------------------------------------------------------------------------------------------------------
 
 def interactive_extract_data_from_h5(hdf):
-	scans = np.int32(hdf.keys())
-	scans.sort()
-	print '--------------------------------------------------------------'
-	print scans
-	print '--------------------------------------------------------------'
-	counterror=0
-	while 1:
-		s = raw_input('Enter scan number : ')
-		if s not in hdf.keys():
-			if(counterror<4):
-				print  'Scan %s not found in file %s  Try Again you have still %d try '%(s,hdf.filename, 4-counterror)
+	global RECORD, REPLAY
+	if not REPLAY==0:
+		exec(getinstruction(REPLAY))
+	else:
+		scans = np.int32(hdf.keys())
+		scans.sort()
+		print '--------------------------------------------------------------'
+		print scans
+		print '--------------------------------------------------------------'
+		counterror=0
+		while 1:
+			s = raw_input('Enter scan number : ')
+			if s not in hdf.keys():
+				if(counterror<4):
+					print  'Scan %s not found in file %s  Try Again you have still %d try '%(s,hdf.filename, 4-counterror)
+				else:
+					raise  Exception , ('Scan %s not found in file %s'%(s,hdf.filename))
+				counterror+=1
 			else:
-				raise  Exception , ('Scan %s not found in file %s'%(s,hdf.filename))
-			counterror+=1
-		else:
-			break
+				break
 
-	detas = np.int32(hdf[s].keys())
-	detas.sort()
-	print '--------------------------------------------------------------'
-	print detas
-	print '--------------------------------------------------------------'
-	d = raw_input('Enter detector number : ')
-	print '--------------------------------------------------------------'
-	if d not in hdf[s].keys():
-		raise  Exception , ('Detector %s not found for scan %s'%(d,s))
+		detas = np.int32(hdf[s].keys())
+		detas.sort()
+		print '--------------------------------------------------------------'
+		print detas
+		print '--------------------------------------------------------------'
+		d = raw_input('Enter detector number : ')
+		print '--------------------------------------------------------------'
+		if d not in hdf[s].keys():
+			raise  Exception , ('Detector %s not found for scan %s'%(d,s))
+		if RECORD:
+			open("interactive_session.log","a").write("s,d=%s   # in function interactive_extract_data_from_h5 \n"%str((s,d)))
+
+
 	E = np.array(hdf[s][d]['DE'],dtype=float).round(3)#why rounded is mandatory ? 
 	A = np.array(hdf[s][d]['NI'],dtype=float).round(2)
 	Err = np.array(hdf[s][d]['NErr'],dtype=float).round(2)
+	
 	return s,d,E,A,Err
 
 #--------------------------------------------------------------------------------------------------------
 	
-def GUI_get_init_peak_params(E,A):
-	plt.ion()
-	
-	plt.plot(E,A,label='Experimental data')
-	plt.xlabel("Energy")
-	plt.ylabel("Intensity")
-	plt.title("IXS Spectrum")
-	fig  = plt.gcf()
-	fig.set_size_inches(8*1.4,6*1.2,forward=True) 
-	ax = fig.gca()
-	box = ax.get_position()
-	ax.set_position([box.x0, box.y0, box.width*0.8, box.height])
-	plt.legend(loc='upper center', bbox_to_anchor=(1.1, 1), fancybox=True, shadow=True, ncol=1)
-	plt.draw()
-
-	global xy,cid
-	xy=None
-	noel = zeroinv(E)
-	if noel:
-		print "Select ONLY the anti-stocks maxima for each exitation."
-		print "Close the plot to start the fit."
+def interactive_GUI_get_init_peak_params(E,A):
+	global RECORD, REPLAY
+	if not REPLAY==0:
+		from numpy import *
+		s= getinstruction(REPLAY)
+		exec(s, locals(), globals())
+		noel=pippo
 	else:
-		print "Pick first the maximum of the elastic line."
-		print "Select the anti-stocks maxima for each exitation."
-		print "Close the plot to start the fit."
-	cid = plt.connect('button_press_event', get_xy)
-	xy=[]
-	plt.ioff()
-	plt.show()
-	plt.disconnect(cid)
+		plt.ion()
+
+		plt.plot(E,A,label='Experimental data')
+		plt.xlabel("Energy")
+		plt.ylabel("Intensity")
+		plt.title("IXS Spectrum")
+		fig  = plt.gcf()
+		fig.set_size_inches(8*1.4,6*1.2,forward=True) 
+		ax = fig.gca()
+		box = ax.get_position()
+		ax.set_position([box.x0, box.y0, box.width*0.8, box.height])
+		plt.legend(loc='upper center', bbox_to_anchor=(1.1, 1), fancybox=True, shadow=True, ncol=1)
+		plt.draw()
+
+		global xy,cid
+		xy=None
+		noel = zeroinv(E)
+		if noel:
+			print "Select ONLY the anti-stokes maxima for each exitation."
+			print "Close the plot to start the fit."
+		else:
+			print "Pick first the maximum of the elastic line."
+			print "Select the anti-stokes maxima for each exitation."
+			print "Close the plot to start the fit."
+		cid = plt.connect('button_press_event', get_xy)
+		xy=[]
+		plt.ioff()
+		plt.show()
+		plt.disconnect(cid)
+		if RECORD:
+			open("interactive_session.log","a").write("xy,pippo=%s   # in function interactive_GUI  \n"%str((xy,noel)))
 	return xy,noel
 
 #--------------------------------------------------------------------------------------------------------	
@@ -356,11 +374,11 @@ def Plot(mod,par_array,E,A, Err, show_graph=1):
 	Sch = mod.Sch
 	mod.params_and_functions.par_array[:] = par_array   # Note : we update internal values. We dont change the object reference value 
 	Center = mod.params_and_functions.shapes[0].get_Center()
-	if show_graph : plt.plot(E-Center,A,'blue',label='Experimental data')# plot : exp data
-
-	plt.xlabel("Energy")
-	plt.ylabel("Intensity")
-	plt.title("IXS Spectrum Fitting")
+	if show_graph : 
+		plt.plot(E-Center,A,'blue',label='Experimental data')# plot : exp data
+		plt.xlabel("Energy")
+		plt.ylabel("Intensity")
+		plt.title("IXS Spectrum Fitting")
 
 	mask=np.zeros(len(mod.params_and_functions.shapes) )
 
@@ -387,12 +405,13 @@ def Plot(mod,par_array,E,A, Err, show_graph=1):
 		Ldat.append(partial_model)
 		icontribution+=1
 
-	fig  = plt.gcf()
-	fig.set_size_inches(8*1.4,6*1.2,forward=True) 
-	ax = fig.gca()
-	box = ax.get_position()
-	ax.set_position([box.x0, box.y0, box.width*0.8, box.height])
-	plt.legend(loc='upper center', bbox_to_anchor=(1.1, 1), fancybox=True, shadow=True, ncol=1)
+	if show_graph :
+		fig  = plt.gcf()
+		fig.set_size_inches(8*1.4,6*1.2,forward=True) 
+		ax = fig.gca()
+		box = ax.get_position()
+		ax.set_position([box.x0, box.y0, box.width*0.8, box.height])
+		plt.legend(loc='upper center', bbox_to_anchor=(1.1, 1), fancybox=True, shadow=True, ncol=1)
 	return Ldat
 	
 def file_print(dirfn,fn, s,d):
@@ -456,8 +475,16 @@ def build_param_name_dict(params_and_functions):
 	return res
 
 def interactive_define_ext_constrains(params_and_functions,constrains):
+  global RECORD, REPLAY
   consttype = {0 : 'Free' ,1 : 'Positive' ,2 : 'Quoted' ,3 : 'Fixed'}
   param_list = params_and_functions.par_array
+
+  if not REPLAY==0:
+	  from numpy import *
+	  exec(getinstruction(REPLAY))
+	  exec(getinstruction(REPLAY))
+	  return constrains
+
   while(1):
 	pname_dict = build_param_name_dict(params_and_functions)
 	print '--------------------------------------------------------------'
@@ -536,6 +563,10 @@ def interactive_define_ext_constrains(params_and_functions,constrains):
 	if redo in ['y','Y']:
 		continue
 	elif redo in ['n','N']:
+			
+		if RECORD:
+			open("interactive_session.log","a").write("constrains=%s   # in function interactive-define-ext-constraints \n"%repr(constrains))
+			open("interactive_session.log","a").write("param_list[:]=%s   # in function interactive-define-ext-constraints \n"%repr(param_list))
 		return constrains
 	else : 
 		'Error : Entry is not matching any case, restarting constrains procedure'
@@ -612,7 +643,8 @@ def get_dotstripped_path_name( name ):
 # Main
 #--------------------------------------------------------------------------------------------------------
 
-def main(argv):
+def main(argv, SHOW, BLOCK):
+	global RECORD, REPLAY
 	print_logo()
 	fn = argv[1]
 	cfg_filename = argv[2]
@@ -653,15 +685,21 @@ def main(argv):
 
 			mod = Model(cfg.T,Ene_array,cfg.res_param,convolution_Function )
 
-			xy, noel = GUI_get_init_peak_params(Ene_array,Intens_array)
+			xy, noel = interactive_GUI_get_init_peak_params(Ene_array,Intens_array)
 			skip = (xy == [])  # xy is a list : [ e0, height0, e1, height....]
 			if noel :   # means : energy range was not containing zero , and elastic peak has not been set  by
                                     # the above GUI routine. We are going to ask for it now and prepend Ec, Ael to xy
+				if not REPLAY==0:
+					exec(getinstruction(REPLAY))
+					xy=[[Ec,Ael]]+xy
 				while(1):
 					try:
 						Ec=float(raw_input('Enter overall scan shift (Ec) : '))
 						Ael=float(raw_input('Enter intensity of elastic line (Ael) : '))
 						xy=[[Ec,Ael]]+xy
+						if RECORD:
+							open("interactive_session.log","a").write("Ec,Ael=.%s   # in completion for noel=True \n"%str((Ec,Ael)))
+
 						break
 					except:
 						print " INPUT ERROR, TRY AGAIN "
@@ -721,7 +759,7 @@ def main(argv):
 			mod.params_and_functions.par_array[:] =  refined_param  # Note : we update internal values. We dont change the object reference value 
 			print 'root-mean-square deviation : %.4f'%  (np.sqrt(np.sum(((Intens_array-mod.Ft_I(refined_param,Ene_array ))**2)))/len(Ene_array))
 
-			plotted_datas = Plot(mod,refined_param,Ene_array,Intens_array,Intens_Err , show_graph=1) # this function would be used also just
+			plotted_datas = Plot(mod,refined_param,Ene_array,Intens_array,Intens_Err , show_graph=SHOW) # this function would be used also just
 			# for grabbing data columns :  Ldat = [E-Center , A, Err,tot, el, inel1, inel2 ...]
 
 			print '--------------------------------------------------------------'
@@ -738,16 +776,28 @@ def main(argv):
 
 			file_print ( output_dir, output_stripped_name       ,  scan_num , detect_num)
 
-			plt.show(block=False)
+			plt.show(block=BLOCK)
 
 			interactive_Entry=True
-			r = raw_input('Would you like to fit another spectrum (y) or (n) default : [y] ?\nor change temperature (t) ?\nor refine again the previous fit with different constrains (r) ?\n')
+			if not REPLAY==0:
+				exec(getinstruction(REPLAY))
+			else:
+				r = raw_input('Would you like to fit another spectrum (y) or (n) default : [y] ?\nor change temperature (t) ?\nor refine again the previous fit with different constrains (r) ?\n')
+				if RECORD:
+					open("interactive_session.log","a").write("r='%s'   # in asking Would you like to fit another spectrum :y,n,r,t \n"%r)
 			plt.close()
 			if r in ['n','N']:
 				print 'Bye Bye'
 				break
 			elif r in ['t','T']:
-				T = raw_input('Temperature ? [297.0]: ')
+				
+				if not REPLAY==0:
+					exec(getinstruction(REPLAY))
+				else:
+					T = raw_input('Temperature ? [297.0]: ')
+					if RECORD :
+						open("interactive_session.log","a").write("T='%s'   # in asking Temperature ? [297.0] \n"%T)
+
 				if T == '':
 					cfg.T = 297.0
 				else :
@@ -762,11 +812,36 @@ def main(argv):
 	hdf.close()
 
 #--------------------------------------------------------------------------------------------------------
+def getinstruction(REPLAY):
+	s=""
+	while("#" not in s):
+		s=s+REPLAY.readline()
+	return s
 
 if __name__ == '__main__':
+	RECORD=0
+	REPLAY=0
+	SHOW=1
+	BLOCK=0
 	argv = sys.argv
-	if len(argv) in [3]:
-		sys.exit(main(argv))
+	if len(argv) in [3,4]:
+		if len(argv)==4:
+			if sys.argv[3]=="RECORD":
+				open("interactive_session.log","w")
+				RECORD=1
+			elif "REPLAY" in sys.argv[3]:
+				print   sys.argv[3]
+				exec(sys.argv[3])
+				if "REPLAYSHOW" in sys.argv[3] :
+					REPLAY=open( REPLAYSHOW,"r")
+					SHOW=1
+					BLOCK=1
+				else:
+					REPLAY=open( REPLAY,"r")
+					SHOW=0
+			else:
+				raise Exception, " Thrid argument, if present ,  must be either RECORD or REPLAY REPLAYSHOW" 
+		sys.exit(main(argv, SHOW, BLOCK))
 	else:
 		print '\nusage : python ixs_fitter.py input_file.h5 file.conf\n'
 
