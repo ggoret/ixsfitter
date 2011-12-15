@@ -58,11 +58,11 @@ class LineModel:
 	def get_Height(self):
 		return self.Height
 
-	def ft_and_derivatives(self, reciprocal_grid, real_grid_origin, Stokes=+1 ):
+	def ft_and_derivatives(self, reciprocal_grid, real_grid_origin, Stokes=+1 , ElC=None):
 		result=np.zeros(   [   1+self.nofMyParams()  , len(reciprocal_grid),    ] ,"D"  )
 
 		if Stokes==-1:
-			Center = Stokes* self.Center - real_grid_origin
+			Center = 2*ElC-self.Center - real_grid_origin
 		else:
 			Center =  self.Center - real_grid_origin
 
@@ -189,7 +189,8 @@ class Model:
 
 				inel_center = contribution.get_Center()
 				fact = fact* np.exp(-(inel_center-el_center)/(self.kb*self.T))
-				value_and_deri =  contribution.ft_and_derivatives( self.Sch, self.xmin , Stokes=-1 )
+				
+				value_and_deri =  contribution.ft_and_derivatives( self.Sch, self.xmin , Stokes=-1, ElC=el_center )
 
 				result=result+value_and_deri [0]*fact
 
@@ -351,17 +352,17 @@ def default_build_constrains( params_and_functions   ,position=0,prange=[],inten
 	for contribution in params_and_functions.shapes:
 		npars = contribution.nofMyParams()
 		parnames = contribution.parNames()
-		# 'inelastic line %d :'%(icontribution+1)
 		for k in range(npars):
-			if k == 0:
+			if ipar+k == -1:
 				c[0][ipar+k],c[1][ipar+k], c[2][ipar+k] =0,0,0 # Free
-		else:
-			if indicators.has_key(parnames[k]) and indicators[parnames[k]]: 
-				c[0][ipar+k]=indicators[parnames[k]]
-				if indicators[parnames[k]]==2:
-					c[1][ipar+k],c[2][ipar+k] =indicators_limits[parnames[k]]
-				else:
-					c[0][ipar+k],c[1][ipar+k], c[2][ipar+k] =0,0,0 # Free
+			else:
+				if indicators.has_key(parnames[k]) and indicators[parnames[k]]: 
+					c[0][ipar+k]=indicators[parnames[k]]
+					if indicators[parnames[k]]==2:
+						c[1][ipar+k],c[2][ipar+k] =indicators_limits[parnames[k]]
+					elif indicators[parnames[k]]==0:
+						c[0][ipar+k],c[1][ipar+k], c[2][ipar+k] =0,0,0 # Free
+
 		icontribution+=1
 		ipar+=npars
 	return c
@@ -737,17 +738,22 @@ def main(argv, SHOW, BLOCK):
 										       constrains=const ,xdata=Ene_array , 
 										       ydata= Intens_array,
 										       sigmadata=Intens_Err)
+
+
 			else:
 				# Plot(mod,params_and_functions.par_array,Ene_array,Intens_array, Intens_Err, show_graph=1)
 				# plt.show()
 
 				const = default_build_constrains(params_and_functions ,position=3,intensity=2,irange=[0.,params_and_functions.maxheight()*2],width=3)
+
 				refined_param, chisq, sigmapar = Gefit.LeastSquaresFit(mod.Ft_I ,params_and_functions.par_array ,
 										       constrains=const ,xdata=Ene_array , 
 										       ydata= Intens_array,
 										       sigmadata=Intens_Err)
+
 				const = default_build_constrains(params_and_functions,position=2, # refined_param[0] est suppose etre le centre de la ligne elastic
-							  prange=[0+refined_param[0],Ene_array[-1]*1.2],intensity=2,irange=[0.,params_and_functions.maxheight()*2],width=2,wrange=[0.,2.5])#XXX 
+							  prange=[0+refined_param[0],Ene_array[-1]*1.2],intensity=2,irange=[0.,params_and_functions.maxheight()*2],width=2,wrange=[0.,2.5])#XXX
+ 
 				refined_param, chisq, sigmapar = Gefit.LeastSquaresFit(mod.Ft_I ,params_and_functions.par_array ,
 										       constrains=const ,xdata=Ene_array , 
 										       ydata= Intens_array,
