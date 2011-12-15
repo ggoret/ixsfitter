@@ -326,9 +326,6 @@ def interactive_GUI_get_init_peak_params(E,A):
 			open("interactive_session.log","a").write("xy,pippo=%s   # in function interactive_GUI  \n"%str((xy,noel)))
 	return xy,noel
 
-#--------------------------------------------------------------------------------------------------------	
-
-	
 #--------------------------------------------------------------------------------------------------------
 
 def default_build_constrains( params_and_functions   ,position=0,prange=[],intensity=0,irange=[],width=0,wrange=[]):
@@ -397,7 +394,7 @@ def Plot(mod,par_array,E,A, Err, show_graph=1):
 		mask[icontribution]=1
 		partial_model = mod.Ft_I(par_array, Ech, interpolation=0, mask=mask) # with interpolation=0 Ech is dummy
 		if icontribution>0:
-			if show_graph : plt.plot(Ech-Center,partial_model,'Cyan',label='Inelastic Contrib %d'%(icontribution+1))	
+			if show_graph : plt.plot(Ech-Center,partial_model,'Cyan',label='Inelastic Contrib %d'%(icontribution))	
 		else:
 			if show_graph : plt.plot(Ech-Center,partial_model,'magenta',label='Elastic Contrib.')
 
