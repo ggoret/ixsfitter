@@ -31,6 +31,7 @@ import numpy as np
 from types import *
 from matplotlib import pyplot as plt
 from PyMca import Gefit 
+from numpy import array
 
 
 
@@ -289,7 +290,6 @@ def interactive_extract_data_from_h5(hdf):
 def interactive_GUI_get_init_peak_params(E,A):
 	global RECORD, REPLAY
 	if not REPLAY==0:
-		from numpy import *
 		s= getinstruction(REPLAY)
 		exec(s, locals(), globals())
 		noel=pippo
@@ -478,7 +478,6 @@ def interactive_define_ext_constrains(params_and_functions,constrains):
   param_list = params_and_functions.par_array
 
   if not REPLAY==0:
-	  from numpy import *
 	  exec(getinstruction(REPLAY))
 	  exec(getinstruction(REPLAY))
 	  return constrains
@@ -735,8 +734,6 @@ def main(argv, SHOW, BLOCK):
 										       constrains=const ,xdata=Ene_array , 
 										       ydata= Intens_array,
 										       sigmadata=Intens_Err)
-
-
 			else:
 				# Plot(mod,params_and_functions.par_array,Ene_array,Intens_array, Intens_Err, show_graph=1)
 				# plt.show()
@@ -749,8 +746,8 @@ def main(argv, SHOW, BLOCK):
 										       sigmadata=Intens_Err)
 
 				const = default_build_constrains(params_and_functions,position=2, # refined_param[0] est suppose etre le centre de la ligne elastic
-							  prange=[0+refined_param[0],Ene_array[-1]*1.2],intensity=2,irange=[0.,params_and_functions.maxheight()*2],width=2,wrange=[0.,2.5])#XXX
- 
+							  prange=[0-2*abs(refined_param[0]),Ene_array[-1]*1.2],intensity=2,irange=[0.,params_and_functions.maxheight()*2],width=2,wrange=[0.,2.5])#XXX
+
 				refined_param, chisq, sigmapar = Gefit.LeastSquaresFit(mod.Ft_I ,params_and_functions.par_array ,
 										       constrains=const ,xdata=Ene_array , 
 										       ydata= Intens_array,
