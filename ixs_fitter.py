@@ -362,6 +362,7 @@ def default_build_constrains( params_and_functions   ,position=0,prange=[],inten
 
 		icontribution+=1
 		ipar+=npars
+	c[1][0]=-c[2][0]
 	return c
     	
 #--------------------------------------------------------------------------------------------------------	
@@ -683,6 +684,7 @@ def main(argv, SHOW, BLOCK):
 			mod = Model(cfg.T,Ene_array,cfg.res_param,convolution_Function )
 
 			xy, noel = interactive_GUI_get_init_peak_params(Ene_array,Intens_array)
+			const=None
 			skip = (xy == [])  # xy is a list : [ e0, height0, e1, height....]
 			if noel :   # means : energy range was not containing zero , and elastic peak has not been set  by
                                     # the above GUI routine. We are going to ask for it now and prepend Ec, Ael to xy
@@ -746,7 +748,7 @@ def main(argv, SHOW, BLOCK):
 										       sigmadata=Intens_Err)
 
 				const = default_build_constrains(params_and_functions,position=2, # refined_param[0] est suppose etre le centre de la ligne elastic
-							  prange=[0-2*abs(refined_param[0]),Ene_array[-1]*1.2],intensity=2,irange=[0.,params_and_functions.maxheight()*2],width=2,wrange=[0.,2.5])#XXX
+							  prange=[0+(refined_param[0]),Ene_array[-1]*1.2],intensity=2,irange=[0.,params_and_functions.maxheight()*2],width=2,wrange=[0.,2.5])#XXX
 
 				refined_param, chisq, sigmapar = Gefit.LeastSquaresFit(mod.Ft_I ,params_and_functions.par_array ,
 										       constrains=const ,xdata=Ene_array , 
