@@ -350,8 +350,8 @@ def default_build_constrains( params_and_functions   ,position=0,prange=[],inten
 		npars = contribution.nofMyParams()
 		parnames = contribution.parNames()
 		for k in range(npars):
-			if ipar+k == -1:
-				c[0][ipar+k],c[1][ipar+k], c[2][ipar+k] =0,0,0 # Free
+			if ipar+k == 0:
+				c[0][ipar+k],c[1][ipar+k], c[2][ipar+k] =2,-prange[1]/2.0,prange[1]/2.0  # Free
 			else:
 				if indicators.has_key(parnames[k]) and indicators[parnames[k]]: 
 					c[0][ipar+k]=indicators[parnames[k]]
@@ -362,7 +362,7 @@ def default_build_constrains( params_and_functions   ,position=0,prange=[],inten
 
 		icontribution+=1
 		ipar+=npars
-	c[1][0]=-c[2][0]
+	# c[1][0]=-c[2][0]
 	return c
     	
 #--------------------------------------------------------------------------------------------------------	
