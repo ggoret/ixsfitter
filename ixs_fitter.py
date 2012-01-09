@@ -786,7 +786,7 @@ def main(argv, SHOW, BLOCK):
 			params_and_functions.print_params(cfg.T,sigmapar, File=sys.stdout)   # on the screen
 			output_dir, output_stripped_name  = get_dotstripped_path_name(hdf.filename)
 			if not os.path.exists(output_dir):
-				os.mkdir(dirfn)
+				os.mkdir(output_dir)
 			out = open('%s/%s_%s_%s.param'%(output_dir,output_stripped_name ,scan_num,detect_num),'w')
 			params_and_functions.print_params(cfg.T,sigmapar, File=out)  # on file
 			out=None
@@ -795,7 +795,10 @@ def main(argv, SHOW, BLOCK):
 
 			file_print ( output_dir, output_stripped_name       ,  scan_num , detect_num)
 
-			plt.show(block=BLOCK)
+			try:
+				plt.show(block=BLOCK)
+			except:
+				plt.show()
 
 			interactive_Entry=True
 			if not REPLAY==0:
