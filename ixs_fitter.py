@@ -185,15 +185,18 @@ class Model:
 				result=result+value_and_deri [0]*fact  # so far we exploit only function itself not derivatives..
 				el_center = contribution.get_Center()
 			else:
-				value_and_deri =  contribution.ft_and_derivatives( self.Sch, self.xmin , Stokes=+1 )
-				result=result+value_and_deri [0]*fact
-
 				inel_center = contribution.get_Center()
-				fact = fact* np.exp(-(inel_center-el_center)/(self.kb*self.T))
+				value_and_deri =  contribution.ft_and_derivatives( self.Sch, self.xmin , Stokes=+1 )
+
+				fact_stokes =  np.exp(+(inel_center-el_center)/(self.kb*self.T))
+				
+
+				result=result+value_and_deri [0]*fact * (fact_stokes/(fact_stokes-1))
+
 				
 				value_and_deri =  contribution.ft_and_derivatives( self.Sch, self.xmin , Stokes=-1, ElC=el_center )
 
-				result=result+value_and_deri [0]*fact
+				result=result+value_and_deri [0]*fact * (  1.0 /(fact_stokes-1))
 
 			icontribution+=1
 			ipar+=npars
@@ -477,6 +480,20 @@ def interactive_define_ext_constrains(params_and_functions,constrains):
   global RECORD, REPLAY
   consttype = {0 : 'Free' ,1 : 'Positive' ,2 : 'Quoted' ,3 : 'Fixed'}
   param_list = params_and_functions.par_array
+
+  s=""
+  pname_dict = build_param_name_dict(params_and_functions)
+  for k in pname_dict.keys():
+	  s=s+("# ------------------------------------------   %s ----------------------------\n" % ( pname_dict[k], ))
+	  s=s+("constrains[0][%d]= %d \n"%(k,int(constrains[0][k]) ))
+	  s=s+("param_list[%d],constrains[1][%d],constrains[2][%d] = %10.4f,%.4f,%.4f  \n"% (k,k,k,param_list[k], constrains[1][k],constrains[2][k]  ))
+	  
+  filename="/tmp/inpufitter"
+  open(filename,"w").write(s)
+  os.system("emacs  %s >/dev/null < /dev/null " % (filename),)
+  s= open(filename,"r").read()
+  exec(s)
+  return 
 
   if not REPLAY==0:
 	  exec(getinstruction(REPLAY))
@@ -787,7 +804,6 @@ def main(argv, SHOW, BLOCK):
 				r = raw_input('Would you like to fit another spectrum (y) or (n) default : [y] ?\nor change temperature (t) ?\nor refine again the previous fit with different constrains (r) ?\n')
 				if RECORD:
 					open("interactive_session.log","a").write("r='%s'   # in asking Would you like to fit another spectrum :y,n,r,t \n"%r)
-			plt.close()
 			if r in ['n','N']:
 				print 'Bye Bye'
 				break
@@ -810,6 +826,8 @@ def main(argv, SHOW, BLOCK):
 				interactive_Entry=False
 			else:
 				pass # will continue as default
+			plt.close()
+
 	# now we exit from the main
 	hdf.close()
 
