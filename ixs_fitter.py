@@ -481,7 +481,7 @@ def interactive_define_ext_constrains(params_and_functions,constrains):
   consttype = {0 : 'Free' ,1 : 'Positive' ,2 : 'Quoted' ,3 : 'Fixed'}
   param_list = params_and_functions.par_array
 
-  s=""
+  s="# Parameter constrains for optimization : \n# 0 = Free ; 1 = Positive ; 2 = Quoted ; 3 = Fixed\n"
   pname_dict = build_param_name_dict(params_and_functions)
   for k in pname_dict.keys():
 	  s=s+("# ------------------------------------------   %s ----------------------------\n" % ( pname_dict[k], ))
@@ -493,7 +493,7 @@ def interactive_define_ext_constrains(params_and_functions,constrains):
   os.system("emacs  %s >/dev/null < /dev/null " % (filename),)
   s= open(filename,"r").read()
   exec(s)
-  return 
+  return constrains
 
   if not REPLAY==0:
 	  exec(getinstruction(REPLAY))
@@ -690,13 +690,12 @@ def main(argv, SHOW, BLOCK):
 		if interactive_Entry:
 			( scan_num , detect_num, 
 			  Ene_array ,Intens_array, Intens_Err) = interactive_extract_data_from_h5(hdf)
-			
 			if  CONVOLUTION_METHOD=="PSEUDOVOIGT":
 				# we build hera a pseudo_voigt for convolution, based on configuration parameters peculiar to the detector 
 				mu,gaussian_w,lorentz_w = cfg.res_param[int(detect_num)]
 				convolution_Function = PseudoVoigt( mu,lorentz_w ,gaussian_w )
 			else:
-				raise Exception, (" I dont know your convolution model=%s, develop it it the code "%CONVOLUTION_METHOD)
+				raise Exception, (" I dont know your convolution model=%s, develop it in the code "%CONVOLUTION_METHOD)
 
 			mod = Model(cfg.T,Ene_array,cfg.res_param,convolution_Function )
 
