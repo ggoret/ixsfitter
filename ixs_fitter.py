@@ -414,6 +414,7 @@ def Plot(mod,par_array,E,A, Err, show_graph=1):
 		box = ax.get_position()
 		ax.set_position([box.x0, box.y0, box.width*0.8, box.height])
 		plt.legend(loc='upper center', bbox_to_anchor=(1.1, 1), fancybox=True, shadow=True, ncol=1)
+	Ldat.append(list(np.interp(E,Ech,np.fft.ifft(mod.resolution_fft).real)))
 	return Ldat
 	
 def file_print(dirfn,fn, s,d):
@@ -789,8 +790,8 @@ def main(argv, SHOW, BLOCK):
 			out = open('%s/%s_%s_%s.param'%(output_dir,output_stripped_name ,scan_num,detect_num),'w')
 			params_and_functions.print_params(cfg.T,sigmapar, File=out)  # on file
 			out=None
-			#print np.array(plotted_datas).shape
-			np.savetxt('%s/%s_%s_%s.dat'%(output_dir,output_stripped_name,scan_num,detect_num), np.column_stack(np.array(plotted_datas)), fmt='%14.4f', delimiter=' ')
+			cs = np.column_stack(plotted_datas)
+			np.savetxt('%s/%s_%s_%s.dat'%(output_dir,output_stripped_name,scan_num,detect_num), cs , fmt='%12.4e', delimiter=' ')
 
 			file_print ( output_dir, output_stripped_name       ,  scan_num , detect_num)
 
