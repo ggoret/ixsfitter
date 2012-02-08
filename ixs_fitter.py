@@ -414,7 +414,12 @@ def Plot(mod,par_array,E,A, Err, show_graph=1):
 		box = ax.get_position()
 		ax.set_position([box.x0, box.y0, box.width*0.8, box.height])
 		plt.legend(loc='upper center', bbox_to_anchor=(1.1, 1), fancybox=True, shadow=True, ncol=1)
-	Ldat.append(list(np.interp(E,Ech,np.fft.ifft(mod.resolution_fft).real)))
+
+	print Ech[0]
+	print Center
+	print mod.xmin
+	print mod.xmax
+	Ldat.append(list(np.interp( mod.xmin  + ((E-Center) %(mod.xmax-mod.xmin) ),Ech,np.fft.ifft(mod.resolution_fft).real)))
 	return Ldat
 	
 def file_print(dirfn,fn, s,d):
