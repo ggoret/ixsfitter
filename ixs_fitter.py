@@ -298,10 +298,9 @@ def interactive_GUI_get_init_peak_params(E,A):
 		noel=pippo
 	else:
 		plt.ion()
-
 		plt.plot(E,A,label='Experimental data')
-		plt.xlabel("Energy")
-		plt.ylabel("Intensity")
+		plt.xlabel("Energy transfer [meV]")
+		plt.ylabel("Intensity [arb. units]")
 		plt.title("IXS Spectrum")
 		fig  = plt.gcf()
 		fig.set_size_inches(8*1.4,6*1.2,forward=True) 
@@ -378,8 +377,8 @@ def Plot(mod,par_array,E,A, Err, show_graph=1):
 	Center = mod.params_and_functions.shapes[0].get_Center()
 	if show_graph : 
 		plt.plot(E-Center,A,'blue',label='Experimental data')# plot : exp data
-		plt.xlabel("Energy")
-		plt.ylabel("Intensity")
+		plt.xlabel("Energy transfer [meV]")
+		plt.ylabel("Intensity [arb. units]")
 		plt.title("IXS Spectrum Fitting")
 
 	mask=np.zeros(len(mod.params_and_functions.shapes) )
@@ -725,26 +724,27 @@ def main(argv, SHOW, BLOCK):
 					except:
 						print " INPUT ERROR, TRY AGAIN "
 						pass
-			# setting up parameter list  : ( position, height, width, position, height.... )
-			param_list = np.zeros([len(xy),3    ],"d")
-			param_list[:,:2]=xy
-			wel,wj =0.1,0.1 #widths of elastic and excitation peaks (initial guess)
-			param_list[0,2]=wel
-			param_list[1:,2]=wj
+			if not skip:
+				# setting up parameter list  : ( position, height, width, position, height.... )
+				param_list = np.zeros([len(xy),3    ],"d")
+				param_list[:,:2]=xy
+				wel,wj =0.1,0.1 #widths of elastic and excitation peaks (initial guess)
+				param_list[0,2]=wel
+				param_list[1:,2]=wj
 
-			# setting up the model
-			params_and_functions = Params_and_Functions()
-			params_and_functions.setParams(param_list.flatten())
-			# //////////////////////////// contributions
-			params_and_functions.setContribution(shape_class=LineModel) # elastic line
-			for i in range(len(xy)-1):
-				params_and_functions.setContribution(shape_class=LineModel)
-			params_and_functions.normalise(mod) 
-			print '--------------------------------------------------------------'
-			print 'Input parameters :'
-			params_and_functions.print_params(cfg.T, File=sys.stdout)
+				# setting up the model
+				params_and_functions = Params_and_Functions()
+				params_and_functions.setParams(param_list.flatten())
+				# //////////////////////////// contributions
+				params_and_functions.setContribution(shape_class=LineModel) # elastic line
+				for i in range(len(xy)-1):
+					params_and_functions.setContribution(shape_class=LineModel)
+				params_and_functions.normalise(mod) 
+				print '--------------------------------------------------------------'
+				print 'Input parameters :'
+				params_and_functions.print_params(cfg.T, File=sys.stdout)
 
-			mod.set_Params_and_Functions(params_and_functions)
+				mod.set_Params_and_Functions(params_and_functions)
 			
 		else:
 			skip=False
