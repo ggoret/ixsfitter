@@ -376,7 +376,9 @@ def Plot(mod,par_array,E,A, Err, show_graph=1):
 	mod.params_and_functions.par_array[:] = par_array   # Note : we update internal values. We dont change the object reference value 
 	Center = mod.params_and_functions.shapes[0].get_Center()
 	if show_graph : 
+		plt.errorbar(E-Center, A, Err,0, 'black',label = 'Errors on Exp data')
 		plt.plot(E-Center,A,'blue',label='Experimental data')# plot : exp data
+		
 		plt.xlabel("Energy transfer [meV]")
 		plt.ylabel("Intensity [arb. units]")
 		plt.title("IXS Spectrum Fitting")
