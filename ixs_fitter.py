@@ -297,7 +297,7 @@ def interactive_GUI_get_init_peak_params(E,A):
 		exec(s, locals(), globals())
 		noel=pippo
 	else:
-		plt.ion()
+		#plt.ion()
 		plt.plot(E,A,label='Experimental data')
 		plt.xlabel("Energy transfer [meV]")
 		plt.ylabel("Intensity [arb. units]")
@@ -322,8 +322,8 @@ def interactive_GUI_get_init_peak_params(E,A):
 			print "Close the plot to start the fit."
 		cid = plt.connect('button_press_event', get_xy)
 		xy=[]
-		plt.ioff()
-		plt.show()
+		#plt.ioff()
+		plt.show(block=True)
 		plt.disconnect(cid)
 		if RECORD:
 			open("interactive_session.log","a").write("xy,pippo=%s   # in function interactive_GUI  \n"%str((xy,noel)))
@@ -791,7 +791,8 @@ def main(argv, SHOW, BLOCK):
 			print '--------------------------------------------------------------'
 			print 'Output parameters :'
 			params_and_functions.print_params(cfg.T,sigmapar, File=sys.stdout)   # on the screen
-			output_dir, output_stripped_name  = get_dotstripped_path_name(hdf.filename)
+			output_dir =  fn[:-3] + '_fit'
+			output_stripped_name  = fn[:-3]
 			if not os.path.exists(output_dir):
 				os.mkdir(output_dir)
 			out = open('%s/%s_%s_%s.param'%(output_dir,output_stripped_name ,scan_num,detect_num),'w')
@@ -873,7 +874,7 @@ if __name__ == '__main__':
 				raise Exception, " Thrid argument, if present ,  must be either RECORD or REPLAY REPLAYSHOW" 
 		sys.exit(main(argv, SHOW, BLOCK))
 	else:
-		print '\nusage : python ixs_fitter.py input_file.h5 file.conf\n'
+		print '\nusage : ixs_fitter input_file.h5 resolution.param\n'
 
 
 		
