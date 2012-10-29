@@ -118,7 +118,7 @@ class PseudoVoigt:
 	def safe_scale_length(self):
 		return  min(self.lorentz_w/40,self.gaussian_w/40) 
 	def safe_margin(self):
-		 return 5*self.lorentz_w+3*self.gaussian_w
+		 return (5*self.lorentz_w+3*self.gaussian_w)*2
 	 
 	def values_on_real_points(self,x ):
 		 return   pseudo_voigt(x ,  self.mu,self.lorentz_w ,self.gaussian_w )
