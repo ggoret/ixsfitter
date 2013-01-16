@@ -110,10 +110,11 @@ def ft_pseudo_voigt(S,mu,wL,wG):
 # ---------------------------------------------------------------------------------------------------------
 
 class PseudoVoigt:
-	def __init__(self ,  mu,lorentz_w ,gaussian_w ):
+	def __init__(self ,  mu,lorentz_w ,gaussian_w , base_line):
 		self.mu=mu
 		self.gaussian_w=gaussian_w
 		self.lorentz_w=lorentz_w
+		self.base_line = base_line
 
 	def safe_scale_length(self):
 		return  min(self.lorentz_w/40,self.gaussian_w/40) 
@@ -121,9 +122,9 @@ class PseudoVoigt:
 		 return (5*self.lorentz_w+3*self.gaussian_w)*2
 	 
 	def values_on_real_points(self,x ):
-		 return   pseudo_voigt(x ,  self.mu,self.lorentz_w ,self.gaussian_w )
+		 return   pseudo_voigt(x ,  self.mu,self.lorentz_w ,self.gaussian_w )+self.base_line
 	def values_on_reciprocal_points(self,x ):
-		 return   ft_pseudo_voigt(x ,  self.mu,self.lorentz_w ,self.gaussian_w )
+		 return   ft_pseudo_voigt(x ,  self.mu,self.lorentz_w ,self.gaussian_w )+self.base_line*len(x)
 	 
 
 
@@ -133,7 +134,7 @@ class PseudoVoigt:
 #--------------------------------------------------------------------------------------------------------
 
 class Model:
-	def __init__(self,T,E,res_param, convolution_function):
+	def __init__(self,T,E, convolution_function):
 		self.convolution_function = convolution_function
 		safe_step = self.convolution_function.safe_scale_length() 
 		safe_margin = self.convolution_function.safe_margin() 
@@ -460,6 +461,11 @@ def read_configuration_file(cfgfn,allowed_keys={} ):
 		else :
 			if not (type(getattr(cfg,key)) is allowed_keys[key]):
 				raise  Exception , ("Wrong type for key %s in config file"%key)
+
+	for key in cfg.res_param.keys():
+		params = cfg.res_param[key]
+		if(len(params)==3): params.append(0.0)
+		
 	return cfg
 
 #--------------------------------------------------------------------------------------------------------
@@ -680,7 +686,7 @@ def main(argv, SHOW, BLOCK):
 	# usage : res_param = {detector_number:[mu,wG,wL],...,n:[mun,wGn,wLn]}
 	res_param ={
 	1:[0.6552,2.604,4.53],
-	2:[0.6319,2.603,4.013],
+	2:[0.6319,2.603,4.<013],
 	..........................
 	}
 	#Temperature (important : floating type is mandatory)
@@ -699,12 +705,12 @@ def main(argv, SHOW, BLOCK):
 			  Ene_array ,Intens_array, Intens_Err) = interactive_extract_data_from_h5(hdf)
 			if  CONVOLUTION_METHOD=="PSEUDOVOIGT":
 				# we build hera a pseudo_voigt for convolution, based on configuration parameters peculiar to the detector 
-				mu,gaussian_w,lorentz_w = cfg.res_param[int(detect_num)]
-				convolution_Function = PseudoVoigt( mu,lorentz_w ,gaussian_w )
+				mu,gaussian_w,lorentz_w , base_line = cfg.res_param[int(detect_num)]
+				convolution_Function = PseudoVoigt( mu,lorentz_w ,gaussian_w , base_line)
 			else:
 				raise Exception, (" I dont know your convolution model=%s, develop it in the code "%CONVOLUTION_METHOD)
 
-			mod = Model(cfg.T,Ene_array,cfg.res_param,convolution_Function )
+			mod = Model(cfg.T,Ene_array,convolution_Function )
 
 			xy, noel = interactive_GUI_get_init_peak_params(Ene_array,Intens_array)
 			const=None
