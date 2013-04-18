@@ -637,10 +637,13 @@ class Params_and_Functions:
 		File.write('-------------------------------------------\n')
 		icontribution=0
 		ipar=0
+		elC=None
 		for contribution in self.shapes:
+			
 			npars = contribution.nofMyParams()
 			parnames = contribution.parNames()
 			if icontribution==0:
+				elC = contribution.get_Center()
 				File.write('Elastic line :\n')
 				for k in range(npars):
 					File.write( '%s   = %.4f (%.4f)\n'%( parnames[k] ,    self.par_array[ipar+k] ,sigma[ipar+k]))
@@ -648,11 +651,15 @@ class Params_and_Functions:
 			else:
 				File.write('Inelastic line %d :\n'%(icontribution))
 				for k in range(npars):
-					File.write( '%s[%d] = %.4f (%.4f)\n'%( parnames[k] ,  icontribution,  self.par_array[ipar+k] ,sigma[ipar+k]))
+					if parnames[k]=="Center":
+						File.write( '%s[%d] = %.4f (%.4f)  (relative to elastic) \n'%( parnames[k],icontribution, self.par_array[ipar+k]-elC ,sigma[ipar+k]))
+					else:
+						File.write( '%s[%d] = %.4f (%.4f)\n'%( parnames[k] ,  icontribution,  self.par_array[ipar+k] ,sigma[ipar+k]))
 			icontribution+=1
 			ipar+=npars
 
 		File.write('--------------------------------------------------------\n')
+		return elC
 			
 def get_dotstripped_path_name( name ):
 	posslash=name.rfind("/")
@@ -802,9 +809,10 @@ def main(argv, SHOW, BLOCK):
 			if not os.path.exists(output_dir):
 				os.mkdir(output_dir)
 			out = open('%s/%s_%s_%s.param'%(output_dir,output_stripped_name ,scan_num,detect_num),'w')
-			params_and_functions.print_params(cfg.T,sigmapar, File=out)  # on file
+			elC = params_and_functions.print_params(cfg.T,sigmapar, File=out)  # on file
 			out=None
 			cs = np.column_stack(plotted_datas)
+			cs[:,0] -= elC
 			np.savetxt('%s/%s_%s_%s.dat'%(output_dir,output_stripped_name,scan_num,detect_num), cs , fmt='%12.4e', delimiter=' ')
 
 			file_print ( output_dir, output_stripped_name       ,  scan_num , detect_num)
