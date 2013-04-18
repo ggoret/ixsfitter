@@ -647,14 +647,17 @@ class Params_and_Functions:
 				File.write('Elastic line :\n')
 				for k in range(npars):
 					# meV2K=1  
-					File.write( '%s   = %.4f meV (%.4f) meV \n'%( parnames[k] ,    self.par_array[ipar+k] ,sigma[ipar+k]))
+					if parnames[k]=="Center":
+						File.write( '%s   = %.4f (%.4f) meV (relative to original E grid) \n'%( parnames[k] ,    self.par_array[ipar+k] ,sigma[ipar+k]))
 					# File.write( '%s   = %.4f   K (%.4f)   K\n' %( parnames[k] ,    self.par_array[ipar+k]*meV2K ,sigma[ipar+k]*meV2K))
+					else:
+						File.write( '%s   = %.4f (%.4f) \n'%( parnames[k] ,    self.par_array[ipar+k] ,sigma[ipar+k]))
 				File.write('-------------------------------------------\n')
 			else:
 				File.write('Inelastic line %d :\n'%(icontribution))
 				for k in range(npars):
 					if parnames[k]=="Center":
-						File.write( '%s[%d] = %.4f (%.4f)  (relative to elastic) \n'%( parnames[k],icontribution, self.par_array[ipar+k]-elC ,sigma[ipar+k]))
+						File.write( '%s[%d] = %.4f (%.4f)  meV (relative to elastic) \n'%( parnames[k],icontribution, self.par_array[ipar+k]-elC ,sigma[ipar+k]))
 					else:
 						File.write( '%s[%d] = %.4f (%.4f)\n'%( parnames[k] ,  icontribution,  self.par_array[ipar+k] ,sigma[ipar+k]))
 			icontribution+=1
