@@ -646,7 +646,9 @@ class Params_and_Functions:
 				elC = contribution.get_Center()
 				File.write('Elastic line :\n')
 				for k in range(npars):
-					File.write( '%s   = %.4f (%.4f)\n'%( parnames[k] ,    self.par_array[ipar+k] ,sigma[ipar+k]))
+					# meV2K=1  
+					File.write( '%s   = %.4f meV (%.4f) meV \n'%( parnames[k] ,    self.par_array[ipar+k] ,sigma[ipar+k]))
+					# File.write( '%s   = %.4f   K (%.4f)   K\n' %( parnames[k] ,    self.par_array[ipar+k]*meV2K ,sigma[ipar+k]*meV2K))
 				File.write('-------------------------------------------\n')
 			else:
 				File.write('Inelastic line %d :\n'%(icontribution))
