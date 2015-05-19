@@ -32,7 +32,7 @@ from types import *
 from matplotlib import pyplot as plt
 from PyMca import Gefit 
 from numpy import array
-
+import h5py
 
 
 
@@ -290,7 +290,32 @@ def interactive_extract_data_from_h5(hdf):
 	return s,d,E,A,Err
 
 #--------------------------------------------------------------------------------------------------------
+
+def get_data_from_txt(fn,detector):
+        
+    dat = open(fn,'r')
+    
+    E = []
+    A = []
+    Err = []
+        
+    for l in dat:
+        E += [np.float32(l.split()[0])]
+        A += [np.float32(l.split()[1])]
+        Err += [np.float32(l.split()[2])]
+
+
+    s = 0
+    d = detector
+    E = np.array(E)
+    A = np.array(A)
+    Err = np.array(Err)
+
+    return s,d,E,A,Err
+        
 	
+#--------------------------------------------------------------------------------------------------------
+
 def interactive_GUI_get_init_peak_params(E,A):
 	global RECORD, REPLAY
 	if not REPLAY==0:
@@ -427,7 +452,7 @@ def Plot(mod,par_array,E,A, Err, show_graph=1):
 def file_print(dirfn,fn, s,d):
 	if not os.path.exists(dirfn):
 		os.mkdir(dirfn)
-	plt.savefig('%s/%s_%s_%s.png'%(dirfn,fn,s,d),format = 'png')#format among : png, pdf, ps, eps, svg
+	plt.savefig('%s/%s_%s.png'%(dirfn,fn,d),format = 'png')#format among : png, pdf, ps, eps, svg
 	
 #--------------------------------------------------------------------------------------------------------
 
@@ -628,6 +653,43 @@ class Params_and_Functions:
 			maxres=max(maxres,shape.get_Height())
 		return maxres
 
+	def print_params_h5(self, T,sigma=None, File=None,datasetname=None ):
+		if sigma == None:
+			sigma =  list(np.zeros(self.par_array.shape ))
+		
+		File = h5py.File(File)
+		group =  File .require_group(datasetname)
+		group.require_dataset("temperature", shape=(1,), dtype=np.float32)
+		group['temperature'][:] = T
+		icontribution = 0 
+		ipar=0
+		for contribution in self.shapes:
+			
+			npars = contribution.nofMyParams()
+			parnames = contribution.parNames()
+			if icontribution==0:
+				elC = contribution.get_Center()
+                                shift=0
+			else:
+				shift = - elC
+			for k in range(npars):
+				if parnames[k]=="Center":
+					group.require_dataset("Center"+str(icontribution), shape=(1,), dtype=np.float32)
+					group.require_dataset("CenterSigma"+str(icontribution), shape=(1,), dtype=np.float32)
+					group["Center"+str(icontribution)][:] = self.par_array[ipar+k]+shift
+					group["CenterSigma"+str(icontribution)][:] = sigma[ipar+k]
+				else:
+					group.require_dataset(parnames[k] +str(icontribution), shape=(1,), dtype=np.float32)
+					group.require_dataset(parnames[k]+"_sigma"+str(icontribution), shape=(1,), dtype=np.float32)
+					group[parnames[k] +str(icontribution)][:]=  self.par_array[ipar+k]
+					group[parnames[k]+"_sigma"+str(icontribution) ][:]=   sigma[ipar+k]
+
+			icontribution+=1
+			ipar+=npars
+
+		return elC
+
+
 	def print_params(self, T,sigma=None, File=sys.stdout):
 		if sigma == None:
 			sigma =  list(np.zeros(self.par_array.shape ))
@@ -688,7 +750,8 @@ def main(argv, SHOW, BLOCK):
 	print_logo()
 	fn = argv[1]
 	cfg_filename = argv[2]
-	hdf = h5py.File(fn,'r')
+	detector = argv[3]
+#	hdf = h5py.File(fn,'r')
 	
 	# the allowed keys will be available as cfg members after reading parameter file 
 	allowed_keys={"res_param":DictType,"T":FloatType}
@@ -713,8 +776,11 @@ def main(argv, SHOW, BLOCK):
 
 	while(1):
 		if interactive_Entry:
+#			( scan_num , detect_num, 
+#			  Ene_array ,Intens_array, Intens_Err) = interactive_extract_data_from_h5(hdf)
 			( scan_num , detect_num, 
-			  Ene_array ,Intens_array, Intens_Err) = interactive_extract_data_from_h5(hdf)
+			  Ene_array ,Intens_array, Intens_Err) = get_data_from_txt(fn,detector)
+
 			if  CONVOLUTION_METHOD=="PSEUDOVOIGT":
 				# we build hera a pseudo_voigt for convolution, based on configuration parameters peculiar to the detector 
 				mu,gaussian_w,lorentz_w , base_line = cfg.res_param[int(detect_num)]
@@ -809,16 +875,23 @@ def main(argv, SHOW, BLOCK):
 			print '--------------------------------------------------------------'
 			print 'Output parameters :'
 			params_and_functions.print_params(cfg.T,sigmapar, File=sys.stdout)   # on the screen
-			output_dir =  fn[:-3] + '_fit'
-			output_stripped_name  = fn[:-3]
+#			output_dir =  fn[:-3] + '_fit'
+#			output_stripped_name  = fn[:-3]
+			output_dir =  fn[:-4] + '_fit'
+			output_stripped_name  = fn[:-4]
 			if not os.path.exists(output_dir):
 				os.mkdir(output_dir)
-			out = open('%s/%s_%s_%s.param'%(output_dir,output_stripped_name ,scan_num,detect_num),'w')
+			out_name = '%s/%s.h5'%(output_dir,output_stripped_name )	
+			datasetname = "data_%s_%s"%(scan_num,detect_num )
+
+#			out = open('%s/%s_%s_%s.param'%(output_dir,output_stripped_name ,scan_num,detect_num),'w')
+			out = open('%s/%s_%s.param'%(output_dir,output_stripped_name, detect_num),'w')
+			elC = params_and_functions.print_params_h5(cfg.T,sigmapar, File=out_name,datasetname= datasetname)  # on file
 			elC = params_and_functions.print_params(cfg.T,sigmapar, File=out)  # on file
 			out=None
 			cs = np.column_stack(plotted_datas)
 			cs[:,0] -= elC
-			np.savetxt('%s/%s_%s_%s.dat'%(output_dir,output_stripped_name,scan_num,detect_num), cs , fmt='%12.4e', delimiter=' ')
+			np.savetxt('%s/%s_%s.dat'%(output_dir,output_stripped_name,detect_num), cs , fmt='%12.4e', delimiter=' ')
 
 			file_print ( output_dir, output_stripped_name       ,  scan_num , detect_num)
 
@@ -859,7 +932,7 @@ def main(argv, SHOW, BLOCK):
 			plt.close()
 
 	# now we exit from the main
-	hdf.close()
+	# hdf.close()
 
 #--------------------------------------------------------------------------------------------------------
 def getinstruction(REPLAY):
@@ -874,15 +947,15 @@ if __name__ == '__main__':
 	SHOW=1
 	BLOCK=0
 	argv = sys.argv
-	if len(argv) in [3,4]:
-		if len(argv)==4:
-			if sys.argv[3]=="RECORD":
+	if len(argv) in [4,5]:
+		if len(argv)==5:
+			if sys.argv[4]=="RECORD":
 				open("interactive_session.log","w")
 				RECORD=1
-			elif "REPLAY" in sys.argv[3]:
-				print   sys.argv[3]
-				exec(sys.argv[3])
-				if "REPLAYSHOW" in sys.argv[3] :
+			elif "REPLAY" in sys.argv[4]:
+				print   sys.argv[4]
+				exec(sys.argv[4])
+				if "REPLAYSHOW" in sys.argv[4] :
 					REPLAY=open( REPLAYSHOW,"r")
 					SHOW=1
 					BLOCK=1
@@ -893,7 +966,7 @@ if __name__ == '__main__':
 				raise Exception, " Thrid argument, if present ,  must be either RECORD or REPLAY REPLAYSHOW" 
 		sys.exit(main(argv, SHOW, BLOCK))
 	else:
-		print '\nusage : ixs_fitter input_file.h5 resolution.param\n'
+		print '\nusage : ixs_fitter data_file.dat resolution.param detector\n'
 
 
 		
